@@ -1,6 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "mkdir -p dist && echo \"API-only deployment: skipping frontend build\"",
+  "buildCommand": "mkdir -p dist && printf '<!doctype html><html><body><h1>API only</h1><p>Use /api/get-token</p></body></html>' > dist/index.html && echo \"API-only deployment: skipping frontend build\"",
   "outputDirectory": "dist",
   "functions": {
     "api/**/*.js": {
