@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { getSuitStyle } from '../../utils/gameUtils';
+import { getSuitStyle, isJokerMatch } from '../../utils/gameUtils';
 
 // ── Mini Card for Hand Display ──────────────────────────
 function MiniResultCard({ rank, suit, isJoker }) {
@@ -103,7 +103,7 @@ export default function ResultsOverlay({ gameState, myId, actions }) {
                       key={idx} 
                       rank={c.rank} 
                       suit={c.suit} 
-                      isJoker={joker?.rank === c.rank && joker?.suit === c.suit} 
+                      isJoker={isJokerMatch(c, joker)} 
                     />
                   ))}
                 </div>
@@ -234,7 +234,7 @@ export function EnhancedResultsOverlay({ gameState, myId, actions }) {
                       key={idx} 
                       rank={c.rank} 
                       suit={c.suit} 
-                      isJoker={joker?.rank === c.rank && joker?.suit === c.suit} 
+                      isJoker={isJokerMatch(c, joker)} 
                     />
                   ))}
                 </div>

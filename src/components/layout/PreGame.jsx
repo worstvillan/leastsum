@@ -4,13 +4,13 @@ import { avatarColor } from '../../utils/gameUtils';
 
 // ── Design tokens (vibrant sky-green theme) ───────────────────
 const CARD_CLS =
-  'w-full bg-white/12 backdrop-blur-md border border-white/25 rounded-2xl px-4 py-3 ' +
-  'font-bold text-white placeholder:text-white/35 outline-none transition-all ' +
-  'focus:border-yellow-400 focus:bg-white/18';
+  'w-full bg-white/92 backdrop-blur-md border border-white/55 rounded-2xl px-4 py-3 ' +
+  'font-bold text-slate-900 placeholder:text-slate-500 outline-none transition-all ' +
+  'focus:border-yellow-400 focus:bg-white';
 
 const AUTOFILL = {
-  WebkitBoxShadow: '0 0 0 1000px rgba(255,255,255,0.12) inset',
-  WebkitTextFillColor: '#ffffff',
+  WebkitBoxShadow: '0 0 0 1000px rgba(255,255,255,0.92) inset',
+  WebkitTextFillColor: '#0f172a',
 };
 
 const CONFIG_DEFAULTS = {

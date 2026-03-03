@@ -13,6 +13,9 @@ export function useGame() {
   const [gameState, setGameState] = useState(null);
   const [error, setError]      = useState('');
   const [loading, setLoading]  = useState(false);
+  const [voiceToken, setVoiceToken] = useState('');
+  const [voiceUrl, setVoiceUrl] = useState(import.meta.env.VITE_LIVEKIT_URL || '');
+  const [voiceError, setVoiceError] = useState('');
 
   const roomCodeRef = useRef('');
   const isHostRef   = useRef(false);
@@ -22,21 +25,27 @@ export function useGame() {
 
   const clearError = useCallback(() => setError(''), []);
 
-  // APPENDED: Fetch Voice Pass from your local server
-  const fetchVoiceToken = async (room, name) => {
+  const requestVoiceToken = useCallback(async (room, name) => {
+    const endpoint = import.meta.env.VITE_VOICE_TOKEN_ENDPOINT || 'https://leastsum-ywrm.vercel.app/api/get-token';
     try {
-      const res = await fetch('http://localhost:3001/get-token', {
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ roomName: room, participantName: name })
+        body: JSON.stringify({ roomName: room, participantName: name, participantId: myId }),
       });
+      if (!res.ok) throw new Error(`Token API failed: ${res.status}`);
       const data = await res.json();
-      return data.token;
+      if (!data?.token) throw new Error('Token missing in response');
+      setVoiceToken(data.token);
+      if (typeof data.url === 'string' && data.url.length > 0) setVoiceUrl(data.url);
+      setVoiceError('');
+      return true;
     } catch (e) {
-      console.error("Token Server not running! Run 'node server.js'");
-      return null;
+      setVoiceToken('');
+      setVoiceError('Voice unavailable. Game is still playable.');
+      return false;
     }
-  };
+  }, [myId]);
 
   const createRoom = async (playerName) => {
     if (!playerName?.trim() || loading) return;
@@ -44,14 +53,10 @@ export function useGame() {
     try {
       const trimmed = playerName.trim();
       const newCode = Math.random().toString(36).slice(2, 6).toUpperCase();
-      
-      // Fetch voice token during creation
-      const token = await fetchVoiceToken(newCode, trimmed);
-      
+
       const gameRef = ref(db, 'rooms/' + newCode);
       await set(gameRef, {
         status: 'waiting',
-        liveKitToken: token, 
         config: { cardsPerPlayer: 6, maxPlayers: 4, elimScore: 200, minTurnsToKnock: 1, knockerPenalty: 60, useJoker: false }, // MODIFIED: Changed default knockerPenalty to 60 (added, not changed existing)
         players: { [myId]: { name: trimmed, order: 0, score: 0, eliminated: false } },
         dealerIdx: 0, round: 0,
@@ -74,11 +79,8 @@ export function useGame() {
       if (!snap.exists()) { setError('Room not found.'); return; }
       const room = snap.val();
       if (room.status !== 'waiting') { setError('Game already started.'); return; }
-      
-      // Fetch voice token during joining
-      const token = await fetchVoiceToken(upperCode, trimmed);
-      
-      await set(ref(db, `rooms/${upperCode}/players/${myId}`), { name: trimmed, order: Object.keys(room.players || {}).length, score: 0, eliminated: false, liveKitToken: token });
+
+      await set(ref(db, `rooms/${upperCode}/players/${myId}`), { name: trimmed, order: Object.keys(room.players || {}).length, score: 0, eliminated: false });
       setMyName(trimmed); setRoomCode(upperCode); setIsHost(false);
     } catch (e) {
       setError('Failed to join room.');
@@ -96,6 +98,7 @@ export function useGame() {
       else await remove(ref(db, `rooms/${code}/players/${myId}`));
     }
     setRoomCode(''); setIsHost(false); setGameState(null); setError('');
+    setVoiceToken(''); setVoiceError('');
   };
 
   const dealRound = async (stateData, dealerIdxOverride) => {
@@ -275,9 +278,15 @@ export function useGame() {
     return () => unsub();
   }, [roomCode]);
 
+  useEffect(() => {
+    if (!roomCode || !myName) return;
+    requestVoiceToken(roomCode, myName);
+  }, [roomCode, myName, requestVoiceToken]);
+
   return {
     myId, myName, roomCode, isHost, gameState, error, clearError, loading,
+    voiceToken, voiceUrl, voiceError, requestVoiceToken,
     createRoom, joinRoom, updateConfig, leaveRoom, startGame, nextRound, playAgain,
-    drawFromDeck, takeDiscard, swapCards, discardDrawn, matchCards, knock,leaveRoom
+    drawFromDeck, takeDiscard, swapCards, discardDrawn, matchCards, knock
   };
 }

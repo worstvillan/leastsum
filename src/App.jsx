@@ -55,6 +55,9 @@ export default function App() {
         gameState={game.gameState}
         myId={game.myId}
         actions={game}
+        voiceToken={game.voiceToken}
+        voiceUrl={game.voiceUrl}
+        voiceError={game.voiceError}
       />
     );
   }

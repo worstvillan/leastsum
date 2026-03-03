@@ -23,6 +23,14 @@ export function makeCard(r, s) {
   return { rank: r, suit: s, value: cardValue({ rank: r, suit: s }) };
 }
 
+/**
+ * Joker rule: match by rank/value only (ignore suit/color).
+ */
+export function isJokerMatch(card, jokerCard) {
+  if (!card || !jokerCard) return false;
+  return card.rank === jokerCard.rank;
+}
+
 export function getSuitStyle(suit) {
   if (suit === '♠') return { bg: 'bg-gray-800', text: 'text-white', accent: '#94a3b8', label: 'spade' };
   if (suit === '♥') return { bg: 'bg-red-500', text: 'text-white', accent: '#ff0000', label: 'heart' }; // Brighter red
@@ -54,11 +62,11 @@ export function getSeatPosition(playerSortedIndex, myIndex, totalPlayers, radius
 export const jokerSparkle = 'animate-sparkle'; // Add to index.css: @keyframes sparkle { 0% { opacity: 0; } 50% { opacity: 1; } 100% { opacity: 0; } } with pseudo-elements for stars
 /**
  * LATEST FEATURE: Calculates the total hand sum.
- * If a card matches the designated jokerCard (rank and suit), it is worth -1 point.
+ * If a card matches the designated joker rank, it is worth -1 point.
  */
 export function handSum(cards, jokerCard = null) {
   return (cards || []).reduce((s, c) => {
-    if (jokerCard && c.rank === jokerCard.rank && c.suit === jokerCard.suit) return s - 1;
+    if (isJokerMatch(c, jokerCard)) return s - 1;
     return s + cardValue(c);
   }, 0);
 }

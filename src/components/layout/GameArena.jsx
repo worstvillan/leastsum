@@ -7,7 +7,7 @@ import {
   useParticipants,
 } from '@livekit/components-react';
 import {
-  avatarColor, handSum, playSound, vibrate,
+  avatarColor, handSum, isJokerMatch, playSound, vibrate,
 } from '../../utils/gameUtils';
 import PlayingCard, { CardBack, MiniCardBack } from '../hand/PlayingCard';
 import ResultsOverlay from './ResultsOverlay';
@@ -91,7 +91,7 @@ function MyVoiceButton() {
 }
 
 // ── Opponent Seat ─────────────────────────────────────────────
-function OpponentSeat({ player, cardCount, isActive, id, fanRotation = 0 }) {
+function OpponentSeat({ player, cardCount, isActive, id, fanRotation = 0, voiceEnabled = false }) {
   const count  = cardCount || 0;
   const fanned = Math.min(count, 8);
   const spread = Math.min(60, fanned * 9);
@@ -110,7 +110,13 @@ function OpponentSeat({ player, cardCount, isActive, id, fanRotation = 0 }) {
           <span className="font-black text-white text-xs whitespace-nowrap">{player.name}</span>
           <span className="text-yellow-400 font-black text-[10px]">{player.score || 0}</span>
         </div>
-        <OppVoiceIndicator identity={id} />
+        {voiceEnabled ? (
+          <OppVoiceIndicator identity={id} />
+        ) : (
+          <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 border bg-black/30 border-white/25 text-white/45">
+            <IconMicOff />
+          </div>
+        )}
       </div>
 
       {/* Fanned face-down cards */}
@@ -163,30 +169,14 @@ function getOppSlots(n) {
 // ══════════════════════════════════════════════════════════════
 // MAIN GAME ARENA
 // ══════════════════════════════════════════════════════════════
-export default function GameArena({ gameState, myId, actions }) {
+export default function GameArena({ gameState, myId, actions, voiceToken = '', voiceUrl = '', voiceError = '' }) {
   const [selectedIndices, setSelectedIndices] = useState([]);
   const [turnFlash,       setTurnFlash]       = useState(false);
   const prevTurnRef = useRef(null);
 
-  const lkUrl   = import.meta.env.VITE_LIVEKIT_URL;
-  const lkToken = gameState?.liveKitToken || gameState?.players?.[myId]?.liveKitToken;
+  const hasVoice = Boolean(voiceUrl && voiceToken);
 
   if (!gameState) return null;
-
-  if (!lkUrl || !lkToken) {
-    return (
-      <div
-        className="flex h-screen items-center justify-center"
-        style={{ background: 'linear-gradient(165deg,#5BC8F5 0%,#4CC95A 100%)' }}
-      >
-        <div className="bg-black/30 backdrop-blur-xl rounded-3xl p-8 text-center border border-white/20">
-          <p className="font-black text-white text-sm uppercase tracking-widest animate-pulse">
-            Connecting to voice…
-          </p>
-        </div>
-      </div>
-    );
-  }
 
   const {
     phase = 'draw',
@@ -252,11 +242,8 @@ export default function GameArena({ gameState, myId, actions }) {
   const isValidMatch  = phase === 'draw' && selectedCards.length > 0 && topDiscard && selectedCards[0]?.rank === topDiscard.rank;
   const isValidSwap   = phase === 'swap'  && selectedCards.length > 0;
 
-  return (
-    <LiveKitRoom audio token={lkToken} serverUrl={lkUrl} connect>
-      {/* Audio only — no visible LiveKit UI */}
-      <div style={{ display: 'none' }}><AudioConference /></div>
-
+  const board = (
+    <>
       {/* Keyframes */}
       <style>{STYLES}</style>
 
@@ -309,6 +296,12 @@ export default function GameArena({ gameState, myId, actions }) {
           {gameState.roomCode ?? '----'} · RD {gameState.round ?? 1}
         </div>
 
+        {!hasVoice && (
+          <div className="fixed top-14 left-1/2 -translate-x-1/2 z-40 px-3 py-1 rounded-full bg-black/35 border border-white/25 text-white/80 text-[10px] font-black uppercase tracking-wide whitespace-nowrap">
+            {voiceError || 'Voice unavailable. Game continues normally.'}
+          </div>
+        )}
+
         {/* My total score — top right */}
         <div className="fixed top-3 right-3 z-40 bg-black/35 backdrop-blur-md border border-white/20 rounded-2xl px-4 py-2 text-right">
           <div className="text-[9px] font-black text-white/50 uppercase tracking-[1.5px]">Score</div>
@@ -341,6 +334,7 @@ export default function GameArena({ gameState, myId, actions }) {
                 isActive={id === currentTurnId}
                 id={id}
                 fanRotation={slot.fan}
+                voiceEnabled={hasVoice}
               />
             </div>
           );
@@ -489,7 +483,13 @@ export default function GameArena({ gameState, myId, actions }) {
                 </div>
                 <div className="text-yellow-400 text-xs font-black leading-tight">Sum: {myHandSum}</div>
               </div>
-              <MyVoiceButton />
+              {hasVoice ? (
+                <MyVoiceButton />
+              ) : (
+                <div className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 border-2 bg-black/30 border-white/25 text-white/45">
+                  <IconMicOff />
+                </div>
+              )}
             </div>
 
             {/* Phase actions */}
@@ -578,7 +578,7 @@ export default function GameArena({ gameState, myId, actions }) {
           >
             {groupedHand.map((card) => {
               const isChosen    = selectedIndices.includes(card.originalIdx);
-              const isJokerCard = jokerCard && card.rank === jokerCard.rank && card.suit === jokerCard.suit;
+              const isJokerCard = isJokerMatch(card, jokerCard);
               const isMatchable = phase === 'draw' && card.rank === topDiscard?.rank && isMyTurn;
 
               return (
@@ -605,6 +605,15 @@ export default function GameArena({ gameState, myId, actions }) {
         </div>
 
       </div>
+    </>
+  );
+
+  if (!hasVoice) return board;
+
+  return (
+    <LiveKitRoom audio token={voiceToken} serverUrl={voiceUrl} connect>
+      <div style={{ display: 'none' }}><AudioConference /></div>
+      {board}
     </LiveKitRoom>
   );
 }

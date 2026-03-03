@@ -20,6 +20,8 @@ Variables used by the app:
 - `VITE_FIREBASE_STORAGE_BUCKET`
 - `VITE_FIREBASE_MESSAGING_SENDER_ID`
 - `VITE_FIREBASE_APP_ID`
+- `VITE_VOICE_TOKEN_ENDPOINT` (LiveKit token API URL)
+- `VITE_LIVEKIT_URL` (fallback LiveKit URL used if token API does not return `url`)
 
 ## Local Development
 
@@ -118,4 +120,10 @@ Wrong method (expect 405):
 
 ```bash
 curl -X GET https://<your-vercel-domain>/api/get-token
+```
+
+Automated script:
+
+```bash
+npm run test:voice-api -- https://<your-vercel-domain>/api/get-token
 ```
