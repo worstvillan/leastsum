@@ -1,0 +1,74 @@
+/* index.css (moved @import to the top to fix Vite CSS error) */
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  margin: 0;
+  overflow: hidden;
+  background: linear-gradient(to bottom, #87CEEB 0%, #32CD32 100%); /* Sky blue to vibrant green */
+  font-family: 'Poppins', sans-serif;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+}
+
+/* Table texture subtle background */
+.table-bg {
+  background-image: url('data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100"%3E%3Crect width="100" height="100" fill="%2332CD32"/%3E%3Cpath d="M0 0L100 100M100 0L0 100" stroke="%2320B020" stroke-width="0.5" opacity="0.3"/%3E%3C/svg%3E');
+  background-size: 50px 50px;
+}
+
+/* Gold accent for highlights */
+.gold-glow {
+  box-shadow: 0 0 15px rgba(255, 215, 0, 0.6);
+}
+
+/* Hide scrollbars globally while keeping scroll */
+* {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+*::-webkit-scrollbar {
+  display: none;
+}
+
+/* Safe area utilities */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.pt-safe {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+/* Smooth font rendering */
+* {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Prevent rubber-band scroll on iOS */
+html, body {
+  overscroll-behavior: none;
+  height: 100%;
+}
+
+/* Focus visible only for keyboard users */
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+@keyframes sparkle {
+  0%, 100% { opacity: 0; transform: scale(0.5); }
+  50% { opacity: 1; transform: scale(1); }
+}
+
+.animate-sparkle::before {
+  content: '✨';
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  animation: sparkle 1s infinite;
+}
