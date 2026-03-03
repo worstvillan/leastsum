@@ -44,6 +44,7 @@ This repo now includes a Vercel serverless endpoint:
 
 - `POST /api/get-token`
 - file: `api/get-token.js`
+- config: `vercel.json` (API-only deploy; skips frontend Vite build)
 
 ### Request Body
 
@@ -82,6 +83,8 @@ This repo now includes a Vercel serverless endpoint:
 3. Deploy.
 4. Use endpoint:
    - `https://<your-vercel-domain>/api/get-token`
+
+If your Vercel project already has a custom Build Command set in dashboard, clear it so repo `vercel.json` is used.
 
 ### Local Backend Test (Optional)
 
