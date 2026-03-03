@@ -26,7 +26,7 @@ export function useGame() {
   const clearError = useCallback(() => setError(''), []);
 
   const requestVoiceToken = useCallback(async (room, name) => {
-    const endpoint = import.meta.env.VITE_VOICE_TOKEN_ENDPOINT || 'https://leastsum-ywrm.vercel.app/api/get-token';
+    const endpoint = import.meta.env.VITE_VOICE_TOKEN_ENDPOINT || '/api/get-token';
     try {
       const res = await fetch(endpoint, {
         method: 'POST',
