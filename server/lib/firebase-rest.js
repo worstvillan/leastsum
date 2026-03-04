@@ -257,7 +257,8 @@ export async function runAdminTransaction(path, mutator, maxRetries = 8) {
       method: 'PUT',
       data: nextValue,
       ifMatch: current.etag || '*',
-      query: { print: 'silent' },
+      // RTDB does not allow `print=silent` with conditional requests (if-match).
+      query: undefined,
     });
 
     if (put.ok) {
