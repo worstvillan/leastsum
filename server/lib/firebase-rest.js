@@ -1,7 +1,10 @@
 import crypto from 'crypto';
 
 const OAUTH_TOKEN_URL = 'https://oauth2.googleapis.com/token';
-const FIREBASE_DB_SCOPE = 'https://www.googleapis.com/auth/firebase.database https://www.googleapis.com/auth/cloud-platform';
+const FIREBASE_DB_SCOPE = [
+  'https://www.googleapis.com/auth/firebase.database',
+  'https://www.googleapis.com/auth/userinfo.email',
+].join(' ');
 
 let cachedAccessToken = null;
 let cachedAccessTokenExp = 0;
