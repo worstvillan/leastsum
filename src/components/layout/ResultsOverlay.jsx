@@ -120,20 +120,14 @@ export default function ResultsOverlay({ gameState, myId, actions }) {
         </div>
 
         {/* Action Button */}
-        {actions.isHost ? (
-          <motion.button
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            onClick={isGameOver ? actions.playAgain : actions.nextRound}
-            className="w-full bg-uno-yellow text-black font-black uppercase tracking-widest py-5 rounded-3xl shadow-glow-yellow text-sm border-t border-white/30"
-          >
-            {isGameOver ? 'Start New Match' : 'Begin Next Round →'}
-          </motion.button>
-        ) : (
-          <div className="text-center py-4 text-white/30 text-[10px] font-black uppercase tracking-[0.3em] animate-pulse">
-            Waiting for Host to proceed
-          </div>
-        )}
+        <motion.button
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
+          onClick={isGameOver ? actions.playAgain : actions.nextRound}
+          className="w-full bg-uno-yellow text-black font-black uppercase tracking-widest py-5 rounded-3xl shadow-glow-yellow text-sm border-t border-white/30"
+        >
+          {isGameOver ? 'Start New Match' : 'Begin Next Round →'}
+        </motion.button>
       </motion.div>
     </div>
   );
@@ -249,20 +243,14 @@ export function EnhancedResultsOverlay({ gameState, myId, actions }) {
           })}
         </div>
 
-        {actions.isHost ? (
-          <motion.button
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            onClick={isGameOver ? actions.playAgain : actions.nextRound}
-            className="w-full bg-yellow-400 text-black font-black uppercase tracking-widest py-5 rounded-3xl gold-glow text-sm border-t border-yellow-500/50"
-          >
-            {isGameOver ? 'Start New Match' : 'Begin Next Round →'}
-          </motion.button>
-        ) : (
-          <div className="text-center py-4 text-white/50 text-[10px] font-black uppercase tracking-[0.3em] animate-pulse">
-            Waiting for Host to proceed
-          </div>
-        )}
+        <motion.button
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
+          onClick={isGameOver ? actions.playAgain : actions.nextRound}
+          className="w-full bg-yellow-400 text-black font-black uppercase tracking-widest py-5 rounded-3xl gold-glow text-sm border-t border-yellow-500/50"
+        >
+          {isGameOver ? 'Start New Match' : 'Begin Next Round →'}
+        </motion.button>
       </motion.div>
     </div>
   );

@@ -31,31 +31,87 @@ const IconMicOff = () => (
     <path d="M19 11h-1.7c0 .74-.16 1.43-.43 2.05l1.23 1.23c.56-1.01.9-2.16.9-3.28zm-4.02.17l-1.98-1.98V4c0-1.1-.9-2-2-2s-2 .9-2 2v.17l4 4 1.98 1.98zM4.27 3L3 4.27 9.28 9.28V11c0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.66 1.66c-.71.33-1.5.52-2.31.52-2.76 0-5.3-2.1-5.3-5.1H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c.58-.08 1.15-.24 1.68-.48L19.73 21 21 19.73 4.27 3z"/>
   </svg>
 );
+const IconTimer = () => (
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+    <path d="M15 1H9v2h6V1zm-1 12.59L16.59 16 18 14.59l-3-3V7h-2v5.59zM12 4a9 9 0 1 0 9 9 9 9 0 0 0-9-9zm0 16a7 7 0 1 1 7-7 7 7 0 0 1-7 7z"/>
+  </svg>
+);
+
+function TurnTimerBadge({ timerPct = 0, timerUrgent = false, remainingSec = 0, sizeClass = 'w-9 h-9' }) {
+  return (
+    <div
+      className={`relative ${sizeClass} rounded-full border-2 flex-shrink-0 ${timerUrgent ? 'border-red-300 animate-pulse' : 'border-yellow-300'}`}
+      style={{
+        background: `conic-gradient(${timerUrgent ? 'rgba(248,113,113,0.95)' : 'rgba(250,204,21,0.95)'} ${timerPct * 3.6}deg, rgba(255,255,255,0.16) 0deg)`,
+      }}
+      title={`${remainingSec}s left`}
+    >
+      <div className="absolute inset-[2px] rounded-full bg-black/45 flex items-center justify-center">
+        <span className={timerUrgent ? 'text-red-200' : 'text-yellow-200'}>
+          <IconTimer />
+        </span>
+      </div>
+    </div>
+  );
+}
 
 // ── Opponent voice indicator (read-only) ──────────────────────
-function OppVoiceIndicator({ identity }) {
+function OppVoiceIndicator({ participantId, roomName = '', participantName = '' }) {
   const participants = useParticipants();
-  const participant  = participants.find(p => p.identity === identity);
+  const fullIdentity = roomName ? `${roomName}:${participantId}` : '';
+  const participant  = participants.find((p) =>
+    p.identity === fullIdentity ||
+    p.identity === participantId ||
+    (participantName && p.name === participantName),
+  );
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isMuted, setIsMuted] = useState(true);
 
   useEffect(() => {
-    if (!participant?.on) { setIsSpeaking(false); return; }
-    setIsSpeaking(!!participant.isSpeaking);
-    const h = s => setIsSpeaking(!!s);
-    participant.on('isSpeakingChanged', h);
-    return () => participant.off('isSpeakingChanged', h);
+    if (!participant?.on) {
+      setIsSpeaking(false);
+      setIsMuted(true);
+      return;
+    }
+
+    const sync = () => {
+      setIsSpeaking(!!participant.isSpeaking);
+      setIsMuted(!participant.isMicrophoneEnabled);
+    };
+
+    sync();
+    const onSpeaking = (s) => setIsSpeaking(!!s);
+    participant.on('isSpeakingChanged', onSpeaking);
+    participant.on('trackMuted', sync);
+    participant.on('trackUnmuted', sync);
+    participant.on('trackPublished', sync);
+    participant.on('trackUnpublished', sync);
+    participant.on('localTrackPublished', sync);
+    participant.on('localTrackUnpublished', sync);
+
+    return () => {
+      participant.off('isSpeakingChanged', onSpeaking);
+      participant.off('trackMuted', sync);
+      participant.off('trackUnmuted', sync);
+      participant.off('trackPublished', sync);
+      participant.off('trackUnpublished', sync);
+      participant.off('localTrackPublished', sync);
+      participant.off('localTrackUnpublished', sync);
+    };
   }, [participant]);
 
   return (
     <div
       className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 border transition-all ${
-        isSpeaking
+        isMuted
+          ? 'bg-red-400/30 border-red-400 text-red-300'
+          : isSpeaking
           ? 'bg-green-400/50 border-green-400 text-white'
           : 'bg-black/30 border-white/25 text-white/60'
       }`}
-      style={{ animation: isSpeaking ? 'pulsemic 1.2s ease infinite' : 'none' }}
+      style={{ animation: isSpeaking && !isMuted ? 'pulsemic 1.2s ease infinite' : 'none' }}
     >
-      <IconMic />
+      {isMuted ? <IconMicOff /> : <IconMic />}
     </div>
   );
 }
@@ -91,7 +147,19 @@ function MyVoiceButton() {
 }
 
 // ── Opponent Seat ─────────────────────────────────────────────
-function OpponentSeat({ player, cardCount, isActive, id, fanRotation = 0, voiceEnabled = false }) {
+function OpponentSeat({
+  player,
+  cardCount,
+  isActive,
+  id,
+  roomName = '',
+  fanRotation = 0,
+  voiceEnabled = false,
+  showTurnTimer = false,
+  timerPct = 0,
+  timerUrgent = false,
+  remainingSec = 0,
+}) {
   const count  = cardCount || 0;
   const fanned = Math.min(count, 8);
   const spread = Math.min(60, fanned * 9);
@@ -110,8 +178,16 @@ function OpponentSeat({ player, cardCount, isActive, id, fanRotation = 0, voiceE
           <span className="font-black text-white text-xs whitespace-nowrap">{player.name}</span>
           <span className="text-yellow-400 font-black text-[10px]">{player.score || 0}</span>
         </div>
+        {showTurnTimer && (
+          <TurnTimerBadge
+            timerPct={timerPct}
+            timerUrgent={timerUrgent}
+            remainingSec={remainingSec}
+            sizeClass="w-7 h-7"
+          />
+        )}
         {voiceEnabled ? (
-          <OppVoiceIndicator identity={id} />
+          <OppVoiceIndicator participantId={id} roomName={roomName} participantName={player?.name} />
         ) : (
           <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 border bg-black/30 border-white/25 text-white/45">
             <IconMicOff />
@@ -169,42 +245,54 @@ function getOppSlots(n) {
 // ══════════════════════════════════════════════════════════════
 // MAIN GAME ARENA
 // ══════════════════════════════════════════════════════════════
-export default function GameArena({ gameState, myId, actions, voiceToken = '', voiceUrl = '', voiceError = '' }) {
+export default function GameArena({ gameState, myId, roomCode = '', actions, voiceToken = '', voiceUrl = '', voiceError = '' }) {
   const [selectedIndices, setSelectedIndices] = useState([]);
   const [turnFlash,       setTurnFlash]       = useState(false);
+  const [nowMs,           setNowMs]           = useState(() => Date.now());
+  const [actionWarning,   setActionWarning]   = useState('');
   const prevTurnRef = useRef(null);
 
   const hasVoice = Boolean(voiceUrl && voiceToken);
+  const resolvedRoomCode = gameState?.roomCode || roomCode || '----';
 
   if (!gameState) return null;
 
   const {
-    phase = 'draw',
+    phase = 'throw',
     turnOrder = [],
     currentTurnIdx = 0,
     hands = {},
     deck = [],
-    discard = [],
-    drawnCard   = null,
-    drawSource  = null,
-    config      = {},
-    jokerCard   = null,
+    previousCard = null,
+    pile = [],
+    pendingThrownCards = null,
+    config = {},
+    jokerCard = null,
   } = gameState ?? {};
 
-  const allPlayersSorted   = Object.entries(gameState?.players ?? {}).sort((a, b) => a[1].order - b[1].order);
+  const allPlayersSorted   = Object.entries(gameState?.players ?? {}).sort((a, b) => (a[1]?.order ?? 0) - (b[1]?.order ?? 0));
   const fallbackTurnOrder  = allPlayersSorted.map(([id]) => id);
   const effectiveTurnOrder = turnOrder.length > 0 ? turnOrder : fallbackTurnOrder;
   const currentTurnId      = effectiveTurnOrder[currentTurnIdx] ?? null;
   const isMyTurn           = currentTurnId === myId;
   const myCards            = hands?.[myId] ?? [];
   const deckCount          = Array.isArray(deck) ? deck.length : 0;
-  const discardArr         = Array.isArray(discard) ? discard : [];
-  const topDiscard         = discardArr[discardArr.length - 1] ?? null;
+  const pileArr            = Array.isArray(pile) ? pile : [];
+  const pileTop            = pileArr[pileArr.length - 1] ?? null;
+  const previousOpenCard   = previousCard ?? null;
+  const pendingThrown      = Array.isArray(pendingThrownCards) ? pendingThrownCards : [];
   const myPlayer           = gameState?.players?.[myId] ?? { name: 'You', score: 0 };
   const currentTurnPlayer  = currentTurnId ? gameState?.players?.[currentTurnId] : null;
   const myTurnCount        = gameState?.turnCount ?? 0;
   const canKnock           = myTurnCount >= (config.minTurnsToKnock ?? 1);
   const myHandSum          = handSum(myCards, jokerCard);
+  const turnDeadlineAt     = Number(gameState?.turnDeadlineAt || 0);
+  const totalTurnMs        = Math.max(5000, (Number(config?.turnTimeSec) || 45) * 1000);
+  const timerActive        = gameState?.status === 'playing' && turnDeadlineAt > 0;
+  const remainingMs        = timerActive ? Math.max(0, turnDeadlineAt - nowMs) : 0;
+  const remainingSec       = timerActive ? Math.ceil(remainingMs / 1000) : 0;
+  const timerPct           = timerActive ? Math.max(0, Math.min(100, (remainingMs / totalTurnMs) * 100)) : 0;
+  const timerUrgent        = timerActive && remainingMs <= 7000;
 
   const opponents = allPlayersSorted.filter(([id]) => id !== myId);
   const oppSlots  = getOppSlots(opponents.length);
@@ -226,8 +314,21 @@ export default function GameArena({ gameState, myId, actions, voiceToken = '', v
     prevTurnRef.current = currentTurnId;
   }, [currentTurnId]); // eslint-disable-line
 
+  useEffect(() => {
+    if (!timerActive) return undefined;
+    setNowMs(Date.now());
+    const id = setInterval(() => setNowMs(Date.now()), 200);
+    return () => clearInterval(id);
+  }, [timerActive, turnDeadlineAt]);
+
+  useEffect(() => {
+    if (!actionWarning) return undefined;
+    const id = setTimeout(() => setActionWarning(''), 2200);
+    return () => clearTimeout(id);
+  }, [actionWarning]);
+
   const handleCardClick = (originalIdx) => {
-    if (!isMyTurn) return;
+    if (!isMyTurn || phase !== 'throw') return;
     vibrate(20);
     const card = myCards[originalIdx];
     if (!card) return;
@@ -239,8 +340,43 @@ export default function GameArena({ gameState, myId, actions, voiceToken = '', v
   };
 
   const selectedCards = selectedIndices.map(i => myCards[i]).filter(Boolean);
-  const isValidMatch  = phase === 'draw' && selectedCards.length > 0 && topDiscard && selectedCards[0]?.rank === topDiscard.rank;
-  const isValidSwap   = phase === 'swap'  && selectedCards.length > 0;
+  const hasSelection = selectedIndices.length > 0;
+  const canThrow = isMyTurn && phase === 'throw' && hasSelection;
+  const isThrowMatch = !!previousOpenCard && selectedCards.length > 0 && selectedCards[0]?.rank === previousOpenCard.rank;
+  const canPick = isMyTurn && phase === 'pick';
+  const shouldScrollHand = groupedHand.length > 6;
+
+  const onKnockAttempt = async () => {
+    vibrate(50);
+    playSound('knock');
+    const result = await actions.knock();
+    if (result?.ok) {
+      setActionWarning('');
+      return;
+    }
+    if (result?.reason === 'KNOCK_SUM_LIMIT') {
+      setActionWarning(`Knock allowed only below 25 (your sum: ${result.sum}).`);
+      vibrate([18, 12, 18]);
+      return;
+    }
+    setActionWarning('Knock is not allowed right now.');
+  };
+
+  const onThrowAttempt = async () => {
+    vibrate(isThrowMatch ? [30, 20, 60] : 30);
+    playSound(isThrowMatch ? 'match' : 'discard');
+    const result = await actions.throwSelected(selectedIndices);
+    if (result?.ok) {
+      setActionWarning('');
+      return;
+    }
+    if (result?.reason === 'MATCH_REQUIRES_ONE_CARD_LEFT') {
+      setActionWarning('Match throw must leave at least 1 card in hand.');
+      vibrate([18, 12, 18]);
+      return;
+    }
+    setActionWarning('Throw is not allowed right now.');
+  };
 
   const board = (
     <>
@@ -293,7 +429,7 @@ export default function GameArena({ gameState, myId, actions, voiceToken = '', v
           className="fixed top-3 left-1/2 -translate-x-1/2 z-40 px-4 py-1.5 rounded-full backdrop-blur-md border border-white/30 bg-black/25 whitespace-nowrap"
           style={{ fontFamily:"'Fredoka One',cursive", fontSize:16, color:'white', letterSpacing:3, textShadow:'0 2px 8px rgba(0,0,0,0.3)' }}
         >
-          {gameState.roomCode ?? '----'} · RD {gameState.round ?? 1}
+          {resolvedRoomCode} · RD {gameState.round ?? 1}
         </div>
 
         {!hasVoice && (
@@ -309,6 +445,12 @@ export default function GameArena({ gameState, myId, actions, voiceToken = '', v
                style={{ fontFamily:"'Fredoka One',cursive" }}>
             {myPlayer.score || 0}
           </div>
+          <button
+            onClick={actions.leaveRoom}
+            className="mt-1 text-[10px] font-black uppercase tracking-wide text-white/70 hover:text-white"
+          >
+            Exit
+          </button>
         </div>
 
         {/* Opponents summary — top left */}
@@ -333,8 +475,13 @@ export default function GameArena({ gameState, myId, actions, voiceToken = '', v
                 cardCount={hands[id]?.length ?? 0}
                 isActive={id === currentTurnId}
                 id={id}
+                roomName={resolvedRoomCode}
                 fanRotation={slot.fan}
                 voiceEnabled={hasVoice}
+                showTurnTimer={timerActive && id === currentTurnId}
+                timerPct={timerPct}
+                timerUrgent={timerUrgent}
+                remainingSec={remainingSec}
               />
             </div>
           );
@@ -357,21 +504,21 @@ export default function GameArena({ gameState, myId, actions, voiceToken = '', v
           <div className="absolute inset-[-6px] rounded-[50%] pointer-events-none"
                style={{ border: '4px solid rgba(255,255,255,0.22)' }} />
 
-          {/* Center: Deck | Discard | Joker | Drawn */}
+          {/* Center: Deck | Previous | Pile | Joker */}
           <div className="flex items-center gap-5 z-10">
 
             {/* Deck */}
             <div className="flex flex-col items-center gap-1 relative">
               <motion.div
-                animate={isMyTurn && phase === 'draw' ? { y: [0, -5, 0] } : {}}
+                animate={canPick ? { y: [0, -5, 0] } : {}}
                 transition={{ repeat: Infinity, duration: 1.6 }}
               >
                 <CardBack
                   size="md"
-                  onClick={isMyTurn && phase === 'draw'
-                    ? () => { vibrate(25); playSound('draw'); actions.drawFromDeck(); }
+                  onClick={canPick
+                    ? () => { vibrate(25); playSound('draw'); actions.pickFromDeck(); }
                     : undefined}
-                  className={isMyTurn && phase === 'draw'
+                  className={canPick
                     ? 'ring-2 ring-yellow-400 shadow-[0_0_18px_rgba(250,204,21,0.65)] cursor-pointer'
                     : ''}
                 />
@@ -385,19 +532,19 @@ export default function GameArena({ gameState, myId, actions, voiceToken = '', v
                     style={{ textShadow:'0 1px 4px rgba(0,0,0,0.5)' }}>DECK</span>
             </div>
 
-            {/* Discard */}
+            {/* Previous player thrown card */}
             <div className="flex flex-col items-center gap-1 relative">
               <motion.div
-                animate={isMyTurn && phase === 'draw' && topDiscard ? { scale: [1, 1.04, 1] } : {}}
+                animate={canPick && previousOpenCard ? { scale: [1, 1.04, 1] } : {}}
                 transition={{ repeat: Infinity, duration: 1.6 }}
               >
-                {topDiscard ? (
+                {previousOpenCard ? (
                   <PlayingCard
-                    rank={topDiscard.rank} suit={topDiscard.suit} size="md"
-                    onClick={isMyTurn && phase === 'draw'
-                      ? () => { vibrate(25); playSound('draw'); actions.takeDiscard(); }
+                    rank={previousOpenCard.rank} suit={previousOpenCard.suit} size="md"
+                    onClick={canPick
+                      ? () => { vibrate(25); playSound('draw'); actions.pickFromPrevious(); }
                       : undefined}
-                    className={isMyTurn && phase === 'draw'
+                    className={canPick
                       ? 'ring-2 ring-yellow-400 shadow-[0_0_18px_rgba(250,204,21,0.65)] cursor-pointer'
                       : ''}
                     style={{ transform: 'rotate(5deg)' }}
@@ -409,7 +556,29 @@ export default function GameArena({ gameState, myId, actions, voiceToken = '', v
                 )}
               </motion.div>
               <span className="text-white/85 font-black text-[9px] uppercase tracking-widest"
-                    style={{ textShadow:'0 1px 4px rgba(0,0,0,0.5)' }}>DISCARD</span>
+                    style={{ textShadow:'0 1px 4px rgba(0,0,0,0.5)' }}>PREVIOUS</span>
+            </div>
+
+            {/* Pile (history, reshuffle source) */}
+            <div className="flex flex-col items-center gap-1 relative">
+              <div className="relative">
+                <CardBack size="sm" className="opacity-85" />
+                {pileTop && (
+                  <PlayingCard
+                    rank={pileTop.rank}
+                    suit={pileTop.suit}
+                    size="sm"
+                    isDisabled
+                    style={{ position: 'absolute', top: 2, left: 8, opacity: 0.9, transform: 'rotate(8deg)' }}
+                  />
+                )}
+              </div>
+              <div className="absolute -top-2.5 -right-2.5 bg-white text-black text-[10px] font-black w-6 h-6 rounded-full flex items-center justify-center border-2 border-gray-700 shadow z-10"
+                   style={{ fontFamily:"'Fredoka One',cursive" }}>
+                {pileArr.length > 99 ? '99+' : pileArr.length}
+              </div>
+              <span className="text-white/85 font-black text-[9px] uppercase tracking-widest"
+                    style={{ textShadow:'0 1px 4px rgba(0,0,0,0.5)' }}>PILE</span>
             </div>
 
             {/* Joker card */}
@@ -429,24 +598,6 @@ export default function GameArena({ gameState, myId, actions, voiceToken = '', v
                       style={{ textShadow:'0 1px 4px rgba(0,0,0,0.5)' }}>−1 PT</span>
               </div>
             )}
-
-            {/* Drawn card (swap phase) */}
-            <AnimatePresence>
-              {phase === 'swap' && drawnCard && (
-                <motion.div
-                  initial={{ scale: 0, y: 20 }} animate={{ scale: 1.05, y: 0 }} exit={{ scale: 0 }}
-                  className="flex flex-col items-center gap-1"
-                >
-                  {(isMyTurn || drawSource === 'discard')
-                    ? <PlayingCard rank={drawnCard.rank} suit={drawnCard.suit} size="sm"
-                                   className="ring-2 ring-white shadow-[0_0_14px_rgba(255,255,255,0.55)]" />
-                    : <CardBack size="sm" />
-                  }
-                  <span className="text-white font-black text-[9px] uppercase tracking-widest"
-                        style={{ textShadow:'0 1px 4px rgba(0,0,0,0.5)' }}>DRAWN</span>
-                </motion.div>
-              )}
-            </AnimatePresence>
           </div>
         </div>
 
@@ -490,6 +641,14 @@ export default function GameArena({ gameState, myId, actions, voiceToken = '', v
                   <IconMicOff />
                 </div>
               )}
+              {timerActive && isMyTurn && (
+                <TurnTimerBadge
+                  timerPct={timerPct}
+                  timerUrgent={timerUrgent}
+                  remainingSec={remainingSec}
+                  sizeClass="w-9 h-9"
+                />
+              )}
             </div>
 
             {/* Phase actions */}
@@ -498,109 +657,112 @@ export default function GameArena({ gameState, myId, actions, voiceToken = '', v
                 <div className="px-4 py-2 bg-black/28 backdrop-blur-md border border-white/15 rounded-2xl text-white/40 text-[10px] font-black uppercase tracking-wider">
                   {currentTurnPlayer?.name ?? '…'}'s turn
                 </div>
-              ) : phase === 'draw' ? (
-                isValidMatch ? (
-                  <motion.button
-                    initial={{ scale: 0.88 }} animate={{ scale: 1 }}
-                    onClick={() => { vibrate([30,20,60]); playSound('match'); actions.matchCards(selectedIndices); }}
-                    className="px-5 py-2.5 bg-yellow-400 text-black font-black text-xs uppercase rounded-2xl shadow-[0_4px_0_rgba(0,0,0,0.28)] hover:brightness-110 active:scale-95"
+              ) : phase === 'throw' ? (
+                <div className="flex gap-2 flex-wrap items-center justify-end">
+                  {!hasSelection && (
+                    <div className="px-3 py-2 bg-black/28 backdrop-blur-md border border-white/15 rounded-2xl text-white/55 text-[10px] font-black uppercase tracking-wider">
+                      Select same-rank card(s), then throw
+                    </div>
+                  )}
+                  <button
+                    onClick={onThrowAttempt}
+                    disabled={!canThrow}
+                    className={`px-5 py-2.5 font-black text-xs uppercase rounded-2xl shadow-[0_4px_0_rgba(0,0,0,0.28)] ${
+                      canThrow
+                        ? isThrowMatch
+                          ? 'bg-yellow-400 text-black hover:brightness-110 active:scale-95'
+                          : 'bg-emerald-500 text-white hover:brightness-110 active:scale-95'
+                        : 'bg-white/10 text-white/20 cursor-not-allowed'
+                    }`}
                   >
-                    MATCH {selectedCards[0]?.rank}s ✓
-                  </motion.button>
-                ) : (
-                  <div className="flex gap-2 flex-wrap">
+                    {isThrowMatch ? `THROW MATCH ${selectedCards[0]?.rank}s ✓` : 'THROW'}
+                  </button>
+                  {canKnock && (
                     <button
-                      onClick={() => { vibrate(25); playSound('draw'); actions.drawFromDeck(); }}
-                      className="px-4 py-2.5 bg-sky-500 text-white font-black text-xs uppercase rounded-2xl shadow-[0_4px_0_rgba(0,0,0,0.28)] hover:brightness-110 active:scale-95"
+                      onClick={onKnockAttempt}
+                      className="px-4 py-2.5 bg-red-500 text-white font-black text-xs uppercase rounded-2xl shadow-[0_4px_0_rgba(0,0,0,0.28)] hover:brightness-110 active:scale-95"
                     >
-                      ↑ DRAW
+                      ✊ KNOCK
                     </button>
-                    <button
-                      onClick={() => { vibrate(25); playSound('draw'); actions.takeDiscard(); }}
-                      disabled={!topDiscard}
-                      className={`px-4 py-2.5 font-black text-xs uppercase rounded-2xl shadow-[0_4px_0_rgba(0,0,0,0.28)] ${
-                        topDiscard ? 'bg-emerald-500 text-white hover:brightness-110 active:scale-95' : 'bg-white/10 text-white/20 cursor-not-allowed'
-                      }`}
-                    >
-                      DISCARD ↓
-                    </button>
-                    {canKnock && (
-                      <button
-                        onClick={() => { vibrate(50); playSound('knock'); actions.knock(); }}
-                        className="px-4 py-2.5 bg-red-500 text-white font-black text-xs uppercase rounded-2xl shadow-[0_4px_0_rgba(0,0,0,0.28)] hover:brightness-110 active:scale-95"
-                      >
-                        ✊ KNOCK
-                      </button>
-                    )}
+                  )}
+                  {actionWarning && (
+                    <div className="px-3 py-2 bg-red-500/20 border border-red-300/50 rounded-2xl text-red-100 text-[10px] font-black uppercase tracking-wider">
+                      {actionWarning}
+                    </div>
+                  )}
+                </div>
+              ) : phase === 'pick' ? (
+                <div className="flex gap-2 flex-wrap items-center justify-end">
+                  <div className="px-3 py-2 bg-black/28 backdrop-blur-md border border-white/15 rounded-2xl text-white/65 text-[10px] font-black uppercase tracking-wider">
+                    Non-match throw done. Pick one source
                   </div>
-                )
-              ) : phase === 'swap' ? (
-                isValidSwap ? (
-                  <motion.button
-                    initial={{ scale: 0.88 }} animate={{ scale: 1 }}
-                    onClick={() => { vibrate(30); playSound('discard'); actions.swapCards(selectedIndices); }}
-                    className="px-5 py-2.5 bg-yellow-400 text-black font-black text-xs uppercase rounded-2xl shadow-[0_4px_0_rgba(0,0,0,0.28)] active:scale-95"
+                  <button
+                    onClick={() => { vibrate(25); playSound('draw'); actions.pickFromDeck(); }}
+                    disabled={!canPick}
+                    className={`px-4 py-2.5 font-black text-xs uppercase rounded-2xl shadow-[0_4px_0_rgba(0,0,0,0.28)] ${
+                      canPick ? 'bg-sky-500 text-white hover:brightness-110 active:scale-95' : 'bg-white/10 text-white/20 cursor-not-allowed'
+                    }`}
                   >
-                    SWAP ✓
-                  </motion.button>
-                ) : (
-                  <div className="flex gap-2 items-center">
-                    <span className="text-yellow-400 text-[10px] font-black uppercase animate-pulse">
-                      Select card(s) to swap
-                    </span>
-                    {drawSource === 'deck' && (
-                      <button
-                        onClick={() => { vibrate(20); playSound('discard'); actions.discardDrawn(); }}
-                        className="px-4 py-2.5 bg-red-500 text-white font-black text-xs uppercase rounded-2xl shadow-[0_4px_0_rgba(0,0,0,0.28)] active:scale-95"
-                      >
-                        DISCARD DRAWN
-                      </button>
-                    )}
-                  </div>
-                )
+                    PICK DECK
+                  </button>
+                  <button
+                    onClick={() => { vibrate(25); playSound('draw'); actions.pickFromPrevious(); }}
+                    disabled={!canPick || !previousOpenCard}
+                    className={`px-4 py-2.5 font-black text-xs uppercase rounded-2xl shadow-[0_4px_0_rgba(0,0,0,0.28)] ${
+                      canPick && previousOpenCard ? 'bg-emerald-500 text-white hover:brightness-110 active:scale-95' : 'bg-white/10 text-white/20 cursor-not-allowed'
+                    }`}
+                  >
+                    PICK PREVIOUS
+                  </button>
+                  {pendingThrown.length > 0 && (
+                    <div className="px-3 py-2 bg-yellow-400/20 border border-yellow-300/40 rounded-2xl text-yellow-100 text-[10px] font-black uppercase tracking-wider">
+                      Thrown: {pendingThrown.map((c) => c?.rank).filter(Boolean).join(', ')}
+                    </div>
+                  )}
+                </div>
               ) : null}
             </div>
           </div>
 
           {/* ── HAND CARDS — horizontally scrollable, max 10 ──── */}
           <div
-            className="flex items-end gap-[6px] pb-5 pt-1"
+            className="pb-5 pt-1 px-4"
             style={{
-              overflowX: groupedHand.length > 6 ? 'auto' : 'visible',
+              overflowX: shouldScrollHand ? 'auto' : 'visible',
               overflowY: 'visible',
-              paddingLeft: 16,
-              paddingRight: 16,
-              justifyContent: groupedHand.length <= 6 ? 'center' : 'flex-start',
               scrollbarWidth: 'none',
               msOverflowStyle: 'none',
               WebkitOverflowScrolling: 'touch',
             }}
           >
-            {groupedHand.map((card) => {
-              const isChosen    = selectedIndices.includes(card.originalIdx);
-              const isJokerCard = isJokerMatch(card, jokerCard);
-              const isMatchable = phase === 'draw' && card.rank === topDiscard?.rank && isMyTurn;
+            <div className="flex items-end gap-[6px] w-max min-w-full justify-center mx-auto">
+              {groupedHand.map((card) => {
+                const isChosen    = selectedIndices.includes(card.originalIdx);
+                const isJokerCard = isJokerMatch(card, jokerCard);
+                const canSelectHand = isMyTurn && phase === 'throw';
+                const isMatchable = phase === 'throw' && card.rank === previousOpenCard?.rank && isMyTurn;
 
-              return (
-                <motion.div
-                  key={card.originalIdx}
-                  animate={{ y: isChosen ? -28 : 0, scale: isChosen ? 1.08 : 1 }}
-                  whileHover={isMyTurn ? { y: -18, scale: 1.05 } : {}}
-                  transition={{ type: 'spring', stiffness: 400, damping: 22 }}
-                  onClick={() => handleCardClick(card.originalIdx)}
-                  style={{ flexShrink: 0, position: 'relative', zIndex: isChosen ? 60 : 10, cursor: isMyTurn ? 'pointer' : 'default' }}
-                >
-                  <PlayingCard
-                    rank={card.rank}
-                    suit={card.suit}
-                    size="lg"
-                    isSelected={isChosen}
-                    isMatchable={isMatchable && !isChosen}
-                    isJoker={isJokerCard}
-                  />
-                </motion.div>
-              );
-            })}
+                return (
+                  <motion.div
+                    key={card.originalIdx}
+                    animate={{ y: isChosen ? -28 : 0, scale: isChosen ? 1.08 : 1 }}
+                    whileHover={canSelectHand ? { y: -18, scale: 1.05 } : {}}
+                    transition={{ type: 'spring', stiffness: 400, damping: 22 }}
+                    onClick={() => handleCardClick(card.originalIdx)}
+                    style={{ flexShrink: 0, position: 'relative', zIndex: isChosen ? 60 : 10, cursor: canSelectHand ? 'pointer' : 'default' }}
+                  >
+                    <PlayingCard
+                      rank={card.rank}
+                      suit={card.suit}
+                      size="lg"
+                      isSelected={isChosen}
+                      isMatchable={isMatchable && !isChosen}
+                      isJoker={isJokerCard}
+                    />
+                  </motion.div>
+                );
+              })}
+            </div>
           </div>
         </div>
 

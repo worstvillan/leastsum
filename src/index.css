@@ -72,3 +72,37 @@ html, body {
   right: -5px;
   animation: sparkle 1s infinite;
 }
+
+/* Lobby input placeholders should look like hints, not entered values */
+.lobby-input::placeholder {
+  color: #cbd5e1 !important;
+  font-weight: 400 !important;
+  font-size: 14px;
+  letter-spacing: 0;
+  opacity: 1;
+}
+
+/* Room code field: hint text should be small/light; typed code can be bold/large */
+.lobby-code-input {
+  text-align: center;
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: 0.4em;
+}
+.lobby-code-input::placeholder {
+  color: #cbd5e1 !important;
+  font-weight: 400 !important;
+  font-size: 14px;
+  letter-spacing: 0;
+}
+.lobby-input::-webkit-input-placeholder,
+.lobby-code-input::-webkit-input-placeholder {
+  color: #cbd5e1 !important;
+  font-weight: 400 !important;
+}
+.lobby-code-input:placeholder-shown {
+  text-align: left;
+  font-size: 1rem;
+  font-weight: 400;
+  letter-spacing: 0;
+}

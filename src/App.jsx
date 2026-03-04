@@ -54,6 +54,7 @@ export default function App() {
       <GameArena
         gameState={game.gameState}
         myId={game.myId}
+        roomCode={game.roomCode}
         actions={game}
         voiceToken={game.voiceToken}
         voiceUrl={game.voiceUrl}

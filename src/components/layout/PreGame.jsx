@@ -4,13 +4,12 @@ import { avatarColor } from '../../utils/gameUtils';
 
 // ── Design tokens (vibrant sky-green theme) ───────────────────
 const CARD_CLS =
-  'w-full bg-white/92 backdrop-blur-md border border-white/55 rounded-2xl px-4 py-3 ' +
-  'font-bold text-slate-900 placeholder:text-slate-500 outline-none transition-all ' +
+  'w-full bg-slate-100/95 backdrop-blur-md border border-white/60 rounded-2xl px-4 py-3 ' +
+  'lobby-input font-medium text-slate-900 outline-none transition-all ' +
   'focus:border-yellow-400 focus:bg-white';
 
 const AUTOFILL = {
   WebkitBoxShadow: '0 0 0 1000px rgba(255,255,255,0.92) inset',
-  WebkitTextFillColor: '#0f172a',
 };
 
 const CONFIG_DEFAULTS = {
@@ -106,7 +105,7 @@ export function Lobby({ onCreateRoom, onJoinRoom, error, clearError, loading }) 
         <input
           type="text" value={name}
           onChange={e => setName(e.target.value.slice(0, 20))}
-          className={CARD_CLS} placeholder="Enter your name"
+          className={CARD_CLS} placeholder="Type your name"
           autoComplete="off" style={AUTOFILL}
           onKeyDown={e => e.key === 'Enter' && (tab === 'create' ? handleCreate() : handleJoin())}
         />
@@ -135,8 +134,8 @@ export function Lobby({ onCreateRoom, onJoinRoom, error, clearError, loading }) 
               <input
                 type="text" value={code}
                 onChange={e => setCode(e.target.value.toUpperCase().slice(0, 4))}
-                className={`${CARD_CLS} text-center text-2xl tracking-[0.4em]`}
-                placeholder="ABCD" autoComplete="off" style={AUTOFILL}
+                className={`${CARD_CLS} lobby-code-input`}
+                placeholder="Type room code" autoComplete="off" style={AUTOFILL}
                 onKeyDown={e => e.key === 'Enter' && handleJoin()}
               />
             </motion.div>
@@ -172,6 +171,7 @@ export function WaitingRoom({ roomCode, isHost, gameState, myId, onUpdateConfig,
   const [showConfig, setShowConfig] = useState(false);
   const cfg     = { ...CONFIG_DEFAULTS, ...(gameState?.config ?? {}) };
   const players = Object.entries(gameState?.players ?? {}).sort((a, b) => a[1].order - b[1].order);
+  const hostPlayerId = gameState?.hostPlayerId ?? players[0]?.[0] ?? null;
 
   const upd = (key, val) => onUpdateConfig({ ...cfg, [key]: val });
 
@@ -256,7 +256,7 @@ export function WaitingRoom({ roomCode, isHost, gameState, myId, onUpdateConfig,
 
         {/* Player list */}
         <div className="flex flex-col gap-2.5 mb-5">
-          {players.map(([id, p], i) => (
+          {players.map(([id, p]) => (
             <div key={id}
               className="flex items-center gap-3 bg-white/8 border border-white/15 rounded-xl p-3"
             >
@@ -271,7 +271,7 @@ export function WaitingRoom({ roomCode, isHost, gameState, myId, onUpdateConfig,
                 {id === myId && (
                   <span className="text-[9px] bg-sky-500 px-2 py-0.5 rounded-full font-black text-white uppercase">You</span>
                 )}
-                {i === 0 && (
+                {id === hostPlayerId && (
                   <span className="text-[9px] bg-yellow-400 px-2 py-0.5 rounded-full font-black text-black uppercase">Host</span>
                 )}
               </div>
