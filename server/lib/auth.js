@@ -36,8 +36,7 @@ export async function verifyFirebaseIdToken(idToken) {
   });
 
   if (!res.ok) {
-    const text = await res.text();
-    throw new ApiError(401, `Invalid auth token: ${text}`);
+    throw new ApiError(401, 'Invalid auth token.');
   }
 
   const data = await res.json();

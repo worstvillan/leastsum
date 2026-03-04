@@ -12,6 +12,10 @@ export class ApiError extends Error {
   }
 }
 
+function makeRequestId() {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
 function getAllowedOrigins() {
   const raw = process.env.ALLOWED_ORIGINS;
   if (!raw) return new Set(DEFAULT_ALLOWED_ORIGINS);
@@ -79,14 +83,24 @@ export async function handleApi(req, res, handler) {
     const result = await handler(payload, req, res);
     if (!res.writableEnded) sendJson(res, 200, result ?? { ok: true });
   } catch (err) {
+    const requestId = makeRequestId();
+
     if (err instanceof ApiError) {
+      const isServerSide = Number(err.status || 0) >= 500;
       sendJson(res, err.status, {
-        error: err.message,
-        ...(err.details || {}),
+        error: isServerSide ? 'Internal server error.' : err.message,
+        ...(isServerSide ? {} : (err.details || {})),
+        ...(isServerSide ? { requestId } : {}),
       });
+      if (isServerSide) {
+        console.error(`[api:${requestId}]`, err);
+      }
       return;
     }
-    const message = err instanceof Error ? err.message : 'Internal server error';
-    sendJson(res, 500, { error: message });
+    console.error(`[api:${requestId}]`, err);
+    sendJson(res, 500, {
+      error: 'Internal server error.',
+      requestId,
+    });
   }
 }

@@ -128,6 +128,43 @@ async function readErrorPayload(res) {
   }
 }
 
+const SAFE_ERROR_MESSAGES = new Set([
+  'Room not found.',
+  'Room is full.',
+  'Game already started.',
+  'Name already taken in this room.',
+  'Session expired. Please join again from waiting room.',
+  'Legacy insecure room is disabled. Create a new secure room.',
+  'Invalid room code.',
+  'Invalid auth token.',
+  'Missing bearer auth token.',
+  'You are not a member of this room.',
+  'Too many join attempts. Please wait a minute and try again.',
+]);
+
+const INTERNAL_ERROR_PATTERNS = [
+  /RTDB/i,
+  /OAuth/i,
+  /roomsV2/i,
+  /roomsV2_engine/i,
+  /requestId/i,
+  /Unauthorized request/i,
+  /Missing FIREBASE_/i,
+  /transaction/i,
+];
+
+function toUiError(err, fallback = 'Something went wrong. Please try again.') {
+  const status = Number(err?.status || 0);
+  const message = String(err?.message || err?.payload?.error || '').trim();
+
+  if (status >= 500) return 'Service temporarily unavailable. Please try again.';
+  if (!message) return fallback;
+  if (SAFE_ERROR_MESSAGES.has(message)) return message;
+  if (INTERNAL_ERROR_PATTERNS.some((re) => re.test(message))) return fallback;
+  if (message.length > 140) return fallback;
+  return message;
+}
+
 function resolveApiUrl(path) {
   if (/^https?:\/\//i.test(path)) return path;
   if (!GAME_API_BASE_URL) return path;
@@ -354,7 +391,7 @@ export function useGame() {
       const result = await gameApiPost('create', { name: playerName.trim() });
       attachLocalSession(result);
     } catch (err) {
-      setError(err?.message || 'Failed to create room.');
+      setError(toUiError(err, 'Failed to create room.'));
     } finally {
       setLoading(false);
     }
@@ -370,7 +407,7 @@ export function useGame() {
       const joined = await gameApiPost('join', { name: playerName.trim(), roomCode: upperCode });
       attachLocalSession(joined);
     } catch (joinErr) {
-      const msg = joinErr?.message || '';
+      const msg = String(joinErr?.payload?.error || joinErr?.message || '');
       const upperCode = code.toUpperCase();
 
       if (msg === 'Game already started.') {
@@ -383,13 +420,13 @@ export function useGame() {
           setLoading(false);
           return;
         } catch (reclaimErr) {
-          setError(reclaimErr?.message || 'Unable to rejoin started game.');
+          setError(toUiError(reclaimErr, 'Unable to rejoin started game.'));
           setLoading(false);
           return;
         }
       }
 
-      setError(joinErr?.message || 'Failed to join room.');
+      setError(toUiError(joinErr, 'Failed to join room.'));
     } finally {
       setLoading(false);
     }
@@ -414,7 +451,7 @@ export function useGame() {
     try {
       await gameApiPost('start', { roomCode: code });
     } catch (err) {
-      setError(err?.message || 'Unable to start game.');
+      setError(toUiError(err, 'Unable to start game.'));
     }
   };
 

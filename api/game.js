@@ -15,6 +15,49 @@ import {
 } from '../server/lib/game-service.js';
 import { ApiError, handleApi } from '../server/lib/http.js';
 
+const JOIN_RECLAIM_WINDOW_MS = 60_000;
+const JOIN_RECLAIM_MAX_ATTEMPTS = 12;
+const joinReclaimBuckets = new Map();
+
+function readClientIp(req) {
+  const xff = req.headers?.['x-forwarded-for'];
+  if (typeof xff === 'string' && xff.trim()) {
+    return xff.split(',')[0].trim();
+  }
+  const xri = req.headers?.['x-real-ip'];
+  if (typeof xri === 'string' && xri.trim()) {
+    return xri.trim();
+  }
+  return req.socket?.remoteAddress || 'unknown';
+}
+
+function enforceJoinReclaimRateLimit(req, uid, action) {
+  if (action !== 'join' && action !== 'reclaim') return;
+
+  const now = Date.now();
+  const key = `${action}:${uid}:${readClientIp(req)}`;
+  const current = joinReclaimBuckets.get(key) || [];
+  const fresh = current.filter((ts) => now - ts < JOIN_RECLAIM_WINDOW_MS);
+
+  if (fresh.length >= JOIN_RECLAIM_MAX_ATTEMPTS) {
+    throw new ApiError(429, 'Too many join attempts. Please wait a minute and try again.');
+  }
+
+  fresh.push(now);
+  joinReclaimBuckets.set(key, fresh);
+
+  if (joinReclaimBuckets.size > 5000) {
+    for (const [bucketKey, bucket] of joinReclaimBuckets.entries()) {
+      const keep = bucket.filter((ts) => now - ts < JOIN_RECLAIM_WINDOW_MS);
+      if (keep.length === 0) {
+        joinReclaimBuckets.delete(bucketKey);
+      } else if (keep.length !== bucket.length) {
+        joinReclaimBuckets.set(bucketKey, keep);
+      }
+    }
+  }
+}
+
 async function requireMemberActionContext(payload, auth) {
   const roomCode = assertRoomCode(payload.roomCode);
   const memberPlayerId = await requireRoomMember(roomCode, auth.uid);
@@ -25,6 +68,7 @@ export default async function handler(req, res) {
   return handleApi(req, res, async (payload) => {
     const auth = await requireAuthContext(req);
     const action = String(payload.action || '').trim();
+    enforceJoinReclaimRateLimit(req, auth.uid, action);
 
     switch (action) {
       case 'create': {
