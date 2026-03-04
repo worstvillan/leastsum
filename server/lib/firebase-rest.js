@@ -151,6 +151,16 @@ async function parseJsonMaybe(res) {
   }
 }
 
+function compactErrorData(data) {
+  if (data == null) return '';
+  if (typeof data === 'string') return data.slice(0, 240);
+  try {
+    return JSON.stringify(data).slice(0, 240);
+  } catch {
+    return String(data).slice(0, 240);
+  }
+}
+
 export async function adminRequest({
   path,
   method = 'GET',
@@ -187,7 +197,7 @@ export async function adminRequest({
 export async function adminGet(path) {
   const resp = await adminRequest({ path, method: 'GET' });
   if (!resp.ok) {
-    throw new Error(`RTDB GET failed (${resp.status}) at ${path}`);
+    throw new Error(`RTDB GET failed (${resp.status}) at ${path}: ${compactErrorData(resp.data)}`);
   }
   return resp.data;
 }
@@ -200,7 +210,7 @@ export async function adminSet(path, value) {
     query: { print: 'silent' },
   });
   if (!resp.ok) {
-    throw new Error(`RTDB PUT failed (${resp.status}) at ${path}`);
+    throw new Error(`RTDB PUT failed (${resp.status}) at ${path}: ${compactErrorData(resp.data)}`);
   }
 }
 
@@ -212,7 +222,7 @@ export async function adminPatch(path, value) {
     query: { print: 'silent' },
   });
   if (!resp.ok) {
-    throw new Error(`RTDB PATCH failed (${resp.status}) at ${path}`);
+    throw new Error(`RTDB PATCH failed (${resp.status}) at ${path}: ${compactErrorData(resp.data)}`);
   }
 }
 
@@ -223,7 +233,7 @@ export async function adminDelete(path) {
     query: { print: 'silent' },
   });
   if (!resp.ok) {
-    throw new Error(`RTDB DELETE failed (${resp.status}) at ${path}`);
+    throw new Error(`RTDB DELETE failed (${resp.status}) at ${path}: ${compactErrorData(resp.data)}`);
   }
 }
 
@@ -231,7 +241,7 @@ export async function runAdminTransaction(path, mutator, maxRetries = 8) {
   for (let attempt = 0; attempt < maxRetries; attempt += 1) {
     const current = await adminRequest({ path, method: 'GET', wantEtag: true });
     if (!current.ok) {
-      throw new Error(`RTDB transaction GET failed (${current.status}) at ${path}`);
+      throw new Error(`RTDB transaction GET failed (${current.status}) at ${path}: ${compactErrorData(current.data)}`);
     }
 
     const nextValue = await mutator(current.data);
@@ -252,7 +262,7 @@ export async function runAdminTransaction(path, mutator, maxRetries = 8) {
     }
 
     if (put.status !== 412) {
-      throw new Error(`RTDB transaction PUT failed (${put.status}) at ${path}`);
+      throw new Error(`RTDB transaction PUT failed (${put.status}) at ${path}: ${compactErrorData(put.data)}`);
     }
   }
 
