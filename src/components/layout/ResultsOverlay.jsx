@@ -96,16 +96,9 @@ export default function ResultsOverlay({ gameState, myId, actions }) {
                   </div>
                 </div>
 
-                {/* Hand Display */}
-                <div className="flex gap-2 flex-wrap">
-                  {result?.cards?.map((c, idx) => (
-                    <MiniResultCard 
-                      key={idx} 
-                      rank={c.rank} 
-                      suit={c.suit} 
-                      isJoker={isJokerMatch(c, joker)} 
-                    />
-                  ))}
+                {/* Privacy-safe hand summary */}
+                <div className="text-[10px] font-black uppercase tracking-wider text-white/55">
+                  Cards hidden for privacy · Count: {result?.cardCount ?? 0}
                 </div>
 
                 {/* Penalty Indicator */}
@@ -222,15 +215,8 @@ export function EnhancedResultsOverlay({ gameState, myId, actions }) {
                   </div>
                 </div>
 
-                <div className="flex gap-2 flex-wrap">
-                  {result?.cards?.map((c, idx) => (
-                    <EnhancedMiniResultCard 
-                      key={idx} 
-                      rank={c.rank} 
-                      suit={c.suit} 
-                      isJoker={isJokerMatch(c, joker)} 
-                    />
-                  ))}
+                <div className="text-[10px] font-black uppercase tracking-wider text-white/55">
+                  Cards hidden for privacy · Count: {result?.cardCount ?? 0}
                 </div>
 
                 {result?.penaltyApplied && (
