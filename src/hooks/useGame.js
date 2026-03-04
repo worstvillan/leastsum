@@ -209,6 +209,10 @@ export function useGame() {
     return data || {};
   }, [ensureIdToken]);
 
+  const gameApiPost = useCallback((action, body = {}) => {
+    return apiPost('/api/game', { action, ...body });
+  }, [apiPost]);
+
   const clearLocalRoomState = useCallback((codeToClear = roomCodeRef.current) => {
     if (codeToClear) clearRoomSession(codeToClear);
     setRoomCode('');
@@ -249,10 +253,7 @@ export function useGame() {
         return;
       }
 
-      const result = await apiPost('/api/game/reclaim', {
-        roomCode: lastRoom,
-        name: stored.playerName,
-      });
+      const result = await gameApiPost('reclaim', { roomCode: lastRoom, name: stored.playerName });
 
       attachLocalSession({
         roomCode: result.roomCode || lastRoom,
@@ -265,7 +266,7 @@ export function useGame() {
         if (lastRoom) clearRoomSession(lastRoom);
       }
     }
-  }, [apiPost, attachLocalSession]);
+  }, [attachLocalSession, gameApiPost]);
 
   useEffect(() => {
     restoreSessionOnLoad();
@@ -342,7 +343,7 @@ export function useGame() {
     setLoading(true);
     setError('');
     try {
-      const result = await apiPost('/api/game/create', { name: playerName.trim() });
+      const result = await gameApiPost('create', { name: playerName.trim() });
       attachLocalSession(result);
     } catch (err) {
       setError(err?.message || 'Failed to create room.');
@@ -358,7 +359,7 @@ export function useGame() {
 
     try {
       const upperCode = code.toUpperCase();
-      const joined = await apiPost('/api/game/join', { name: playerName.trim(), roomCode: upperCode });
+      const joined = await gameApiPost('join', { name: playerName.trim(), roomCode: upperCode });
       attachLocalSession(joined);
     } catch (joinErr) {
       const msg = joinErr?.message || '';
@@ -366,7 +367,7 @@ export function useGame() {
 
       if (msg === 'Game already started.') {
         try {
-          const reclaimed = await apiPost('/api/game/reclaim', {
+          const reclaimed = await gameApiPost('reclaim', {
             name: playerName.trim(),
             roomCode: upperCode,
           });
@@ -390,7 +391,7 @@ export function useGame() {
     const code = roomCodeRef.current;
     if (!code || !gameState || gameState.status !== 'waiting') return;
     try {
-      await apiPost('/api/game/update-config', {
+      await gameApiPost('updateConfig', {
         roomCode: code,
         config: newConfig,
       });
@@ -403,7 +404,7 @@ export function useGame() {
     const code = roomCodeRef.current;
     if (!code) return;
     try {
-      await apiPost('/api/game/start', { roomCode: code });
+      await gameApiPost('start', { roomCode: code });
     } catch (err) {
       setError(err?.message || 'Unable to start game.');
     }
@@ -417,7 +418,7 @@ export function useGame() {
     }
 
     try {
-      await apiPost('/api/game/leave', { roomCode: code });
+      await gameApiPost('leave', { roomCode: code });
     } catch {
       // Room may already be gone; clear local state anyway.
     } finally {
@@ -427,7 +428,7 @@ export function useGame() {
 
   const throwSelected = async (indices) => {
     try {
-      const result = await apiPost('/api/game/action/throw', {
+      const result = await gameApiPost('throw', {
         roomCode: roomCodeRef.current,
         indices,
       });
@@ -439,7 +440,7 @@ export function useGame() {
 
   const pickFromDeck = async () => {
     try {
-      await apiPost('/api/game/action/pick', {
+      await gameApiPost('pick', {
         roomCode: roomCodeRef.current,
         source: 'deck',
       });
@@ -450,7 +451,7 @@ export function useGame() {
 
   const pickFromPrevious = async () => {
     try {
-      await apiPost('/api/game/action/pick', {
+      await gameApiPost('pick', {
         roomCode: roomCodeRef.current,
         source: 'previous',
       });
@@ -461,7 +462,7 @@ export function useGame() {
 
   const knockAction = async () => {
     try {
-      await apiPost('/api/game/action/knock', {
+      await gameApiPost('knock', {
         roomCode: roomCodeRef.current,
       });
       return { ok: true };
@@ -472,7 +473,7 @@ export function useGame() {
 
   const nextRound = async () => {
     try {
-      await apiPost('/api/game/next-round', {
+      await gameApiPost('nextRound', {
         roomCode: roomCodeRef.current,
       });
     } catch {
@@ -482,7 +483,7 @@ export function useGame() {
 
   const playAgain = async () => {
     try {
-      await apiPost('/api/game/play-again', {
+      await gameApiPost('playAgain', {
         roomCode: roomCodeRef.current,
       });
     } catch {
@@ -506,7 +507,7 @@ export function useGame() {
 
       timeoutInFlightRef.current = true;
       try {
-        await apiPost('/api/game/action/timeout', { roomCode });
+        await gameApiPost('timeout', { roomCode });
       } catch {
         // harmless when timeout is not due or another client already processed it
       } finally {
@@ -515,7 +516,7 @@ export function useGame() {
     }, 1000);
 
     return () => clearInterval(id);
-  }, [apiPost, gameState, roomCode]);
+  }, [gameApiPost, gameState, roomCode]);
 
   useEffect(() => {
     if (!error) return undefined;

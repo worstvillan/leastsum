@@ -13,18 +13,20 @@
 7. LiveKit token endpoint hardened with auth + membership checks.
 
 ## API routes
-1. `POST /api/game/create`
-2. `POST /api/game/join`
-3. `POST /api/game/reclaim`
-4. `POST /api/game/start`
-5. `POST /api/game/update-config`
-6. `POST /api/game/action/throw`
-7. `POST /api/game/action/pick`
-8. `POST /api/game/action/knock`
-9. `POST /api/game/action/timeout`
-10. `POST /api/game/leave`
-11. `POST /api/game/next-round`
-12. `POST /api/game/play-again`
+1. `POST /api/game` with `action`:
+   - `create`
+   - `join`
+   - `reclaim`
+   - `start`
+   - `updateConfig`
+   - `throw`
+   - `pick`
+   - `knock`
+   - `timeout`
+   - `leave`
+   - `nextRound`
+   - `playAgain`
+2. `POST /api/get-token`
 
 All routes require `Authorization: Bearer <firebase-id-token>` except create/join/reclaim still require auth but not pre-existing room membership.
 

@@ -1,7 +1,7 @@
 import { AccessToken } from 'livekit-server-sdk';
-import { ApiError, handleApi } from './_lib/http.js';
-import { assertRoomCode, requireAuthContext, requireRoomMember } from './_lib/auth.js';
-import { adminGet } from './_lib/firebase-rest.js';
+import { ApiError, handleApi } from '../server/lib/http.js';
+import { assertRoomCode, requireAuthContext, requireRoomMember } from '../server/lib/auth.js';
+import { adminGet } from '../server/lib/firebase-rest.js';
 
 const DEFAULT_TTL_SECONDS = 900;
 
