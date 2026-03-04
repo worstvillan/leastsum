@@ -140,6 +140,7 @@ const SAFE_ERROR_MESSAGES = new Set([
   'Missing bearer auth token.',
   'You are not a member of this room.',
   'Too many join attempts. Please wait a minute and try again.',
+  'Too many restore attempts. Please wait a minute and try again.',
 ]);
 
 const INTERNAL_ERROR_PATTERNS = [
@@ -163,6 +164,17 @@ function toUiError(err, fallback = 'Something went wrong. Please try again.') {
   if (INTERNAL_ERROR_PATTERNS.some((re) => re.test(message))) return fallback;
   if (message.length > 140) return fallback;
   return message;
+}
+
+function isPermanentRestoreFailure(err) {
+  const status = Number(err?.status || 0);
+  const message = String(err?.payload?.error || err?.message || '');
+
+  if (status === 404 || status === 410) return true;
+  if (status === 401) return true;
+  if (status === 403 && /member|session|denied/i.test(message)) return true;
+  if (status === 400 && /invalid room|session expired|room not found|legacy insecure/i.test(message)) return true;
+  return false;
 }
 
 function resolveApiUrl(path) {
@@ -285,11 +297,12 @@ export function useGame() {
     if (restoredOnceRef.current) return;
     restoredOnceRef.current = true;
 
+    let lastRoom = '';
     try {
       await ensureAuthUser();
       if (!hasWindow()) return;
 
-      const lastRoom = window.localStorage.getItem(STORAGE_LAST_ROOM);
+      lastRoom = window.localStorage.getItem(STORAGE_LAST_ROOM) || '';
       if (!lastRoom) return;
 
       const stored = readRoomSession(lastRoom);
@@ -298,20 +311,30 @@ export function useGame() {
         return;
       }
 
-      const result = await gameApiPost('reclaim', { roomCode: lastRoom, name: stored.playerName });
+      // Attach immediately from local session so refresh does not drop the player view.
+      attachLocalSession({
+        roomCode: lastRoom,
+        playerId: stored.playerId,
+        playerName: stored.playerName,
+      });
+
+      const result = await gameApiPost('reclaim', {
+        roomCode: lastRoom,
+        name: stored.playerName,
+      });
 
       attachLocalSession({
         roomCode: result.roomCode || lastRoom,
         playerId: result.playerId || stored.playerId,
         playerName: result.playerName || stored.playerName,
       });
-    } catch {
-      if (hasWindow()) {
-        const lastRoom = window.localStorage.getItem(STORAGE_LAST_ROOM);
-        if (lastRoom) clearRoomSession(lastRoom);
+    } catch (err) {
+      if (lastRoom && isPermanentRestoreFailure(err)) {
+        clearLocalRoomState(lastRoom);
+        setError(toUiError(err, 'Unable to restore previous session.'));
       }
     }
-  }, [attachLocalSession, gameApiPost]);
+  }, [attachLocalSession, clearLocalRoomState, gameApiPost]);
 
   useEffect(() => {
     restoreSessionOnLoad();
@@ -323,20 +346,34 @@ export function useGame() {
     const publicRef = ref(db, `roomsV2/${roomCode}/public`);
     const privateRef = myId ? ref(db, `roomsV2/${roomCode}/private/${myId}`) : null;
 
-    const unsubPublic = onValue(publicRef, (snap) => {
-      if (!snap.exists()) {
+    const unsubPublic = onValue(
+      publicRef,
+      (snap) => {
+        if (!snap.exists()) {
+          clearLocalRoomState(roomCode);
+          setError('Room ended due to inactivity or all players left.');
+          return;
+        }
+        setPublicState(snap.val());
+      },
+      () => {
         clearLocalRoomState(roomCode);
-        setError('Room ended due to inactivity or all players left.');
-        return;
-      }
-      setPublicState(snap.val());
-    });
+        setError('Unable to restore this session. Please join again.');
+      },
+    );
 
     let unsubPrivate = () => {};
     if (privateRef) {
-      unsubPrivate = onValue(privateRef, (snap) => {
-        setPrivateState(snap.exists() ? snap.val() : null);
-      });
+      unsubPrivate = onValue(
+        privateRef,
+        (snap) => {
+          setPrivateState(snap.exists() ? snap.val() : null);
+        },
+        () => {
+          clearLocalRoomState(roomCode);
+          setError('Unable to restore this session. Please join again.');
+        },
+      );
     }
 
     return () => {

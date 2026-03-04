@@ -15,9 +15,10 @@ import {
 } from '../server/lib/game-service.js';
 import { ApiError, handleApi } from '../server/lib/http.js';
 
-const JOIN_RECLAIM_WINDOW_MS = 60_000;
-const JOIN_RECLAIM_MAX_ATTEMPTS = 12;
-const joinReclaimBuckets = new Map();
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const JOIN_MAX_ATTEMPTS = 12;
+const RECLAIM_MAX_ATTEMPTS = 60;
+const actionBuckets = new Map();
 
 function readClientIp(req) {
   const xff = req.headers?.['x-forwarded-for'];
@@ -34,25 +35,29 @@ function readClientIp(req) {
 function enforceJoinReclaimRateLimit(req, uid, action) {
   if (action !== 'join' && action !== 'reclaim') return;
 
+  const maxAttempts = action === 'join' ? JOIN_MAX_ATTEMPTS : RECLAIM_MAX_ATTEMPTS;
   const now = Date.now();
   const key = `${action}:${uid}:${readClientIp(req)}`;
-  const current = joinReclaimBuckets.get(key) || [];
-  const fresh = current.filter((ts) => now - ts < JOIN_RECLAIM_WINDOW_MS);
+  const current = actionBuckets.get(key) || [];
+  const fresh = current.filter((ts) => now - ts < RATE_LIMIT_WINDOW_MS);
 
-  if (fresh.length >= JOIN_RECLAIM_MAX_ATTEMPTS) {
+  if (fresh.length >= maxAttempts) {
+    if (action === 'reclaim') {
+      throw new ApiError(429, 'Too many restore attempts. Please wait a minute and try again.');
+    }
     throw new ApiError(429, 'Too many join attempts. Please wait a minute and try again.');
   }
 
   fresh.push(now);
-  joinReclaimBuckets.set(key, fresh);
+  actionBuckets.set(key, fresh);
 
-  if (joinReclaimBuckets.size > 5000) {
-    for (const [bucketKey, bucket] of joinReclaimBuckets.entries()) {
-      const keep = bucket.filter((ts) => now - ts < JOIN_RECLAIM_WINDOW_MS);
+  if (actionBuckets.size > 5000) {
+    for (const [bucketKey, bucket] of actionBuckets.entries()) {
+      const keep = bucket.filter((ts) => now - ts < RATE_LIMIT_WINDOW_MS);
       if (keep.length === 0) {
-        joinReclaimBuckets.delete(bucketKey);
+        actionBuckets.delete(bucketKey);
       } else if (keep.length !== bucket.length) {
-        joinReclaimBuckets.set(bucketKey, keep);
+        actionBuckets.set(bucketKey, keep);
       }
     }
   }
