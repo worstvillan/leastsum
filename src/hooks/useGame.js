@@ -5,6 +5,7 @@ import { db, ensureAuthUser } from '../firebase';
 const STORAGE_CLIENT_ID = 'leastsum.clientId';
 const STORAGE_LAST_ROOM = 'leastsum.lastRoomCode';
 const STORAGE_PLAYER_PREFIX = 'leastsum.playerByRoom.';
+const GAME_API_BASE_URL = String(import.meta.env.VITE_GAME_API_BASE_URL || '').replace(/\/+$/, '');
 
 function hasWindow() {
   return typeof window !== 'undefined' && !!window.localStorage;
@@ -127,6 +128,13 @@ async function readErrorPayload(res) {
   }
 }
 
+function resolveApiUrl(path) {
+  if (/^https?:\/\//i.test(path)) return path;
+  if (!GAME_API_BASE_URL) return path;
+  const normalized = String(path || '');
+  return `${GAME_API_BASE_URL}${normalized.startsWith('/') ? normalized : `/${normalized}`}`;
+}
+
 function resolveHostPlayerId(state) {
   if (state?.hostPlayerId) return state.hostPlayerId;
   const entries = Object.entries(state?.players || {}).sort((a, b) => (a[1]?.order ?? 0) - (b[1]?.order ?? 0));
@@ -185,7 +193,7 @@ export function useGame() {
 
   const apiPost = useCallback(async (path, body = {}, opts = {}) => {
     const token = await ensureIdToken();
-    const res = await fetch(path, {
+    const res = await fetch(resolveApiUrl(path), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
