@@ -7,7 +7,7 @@ import {
   useParticipants,
 } from '@livekit/components-react';
 import {
-  avatarColor, isJokerMatch, playSound, vibrate,
+  avatarColor, handSum, isJokerMatch, playSound, RANKS, vibrate,
 } from '../../utils/gameUtils';
 import PlayingCard, { CardBack, MiniCardBack } from '../hand/PlayingCard';
 import ResultsOverlay from './ResultsOverlay';
@@ -55,8 +55,8 @@ function TurnTimerBadge({ timerPct = 0, timerUrgent = false, remainingSec = 0, s
   );
 }
 
-// ── Opponent voice indicator (read-only) ──────────────────────
-function OppVoiceIndicator({ participantId, roomName = '', participantName = '' }) {
+// ── Opponent voice control (local listen mute/unmute) ─────────
+function OppVoiceControl({ participantId, roomName = '', participantName = '' }) {
   const participants = useParticipants();
   const fullIdentity = roomName ? `${roomName}:${participantId}` : '';
   const participant  = participants.find((p) =>
@@ -65,18 +65,19 @@ function OppVoiceIndicator({ participantId, roomName = '', participantName = '' 
     (participantName && p.name === participantName),
   );
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const [isMuted, setIsMuted] = useState(true);
+  const [isMicEnabled, setIsMicEnabled] = useState(false);
+  const [isListenMuted, setIsListenMuted] = useState(false);
 
   useEffect(() => {
     if (!participant?.on) {
       setIsSpeaking(false);
-      setIsMuted(true);
+      setIsMicEnabled(false);
       return;
     }
 
     const sync = () => {
       setIsSpeaking(!!participant.isSpeaking);
-      setIsMuted(!participant.isMicrophoneEnabled);
+      setIsMicEnabled(!!participant.isMicrophoneEnabled);
     };
 
     sync();
@@ -100,19 +101,42 @@ function OppVoiceIndicator({ participantId, roomName = '', participantName = '' 
     };
   }, [participant]);
 
+  useEffect(() => {
+    if (!participant?.setVolume) return;
+    participant.setVolume(isListenMuted ? 0 : 1);
+  }, [participant, isListenMuted]);
+
+  const cannotResolve = !participant;
+  const title = cannotResolve
+    ? 'Voice not connected'
+    : isListenMuted
+      ? 'Unmute this player for me'
+      : 'Mute this player for me';
+
   return (
-    <div
+    <button
+      type="button"
+      onClick={() => {
+        if (cannotResolve) return;
+        setIsListenMuted((v) => !v);
+      }}
+      disabled={cannotResolve}
+      title={title}
       className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 border transition-all ${
-        isMuted
+        cannotResolve
+          ? 'bg-black/30 border-white/25 text-white/45 cursor-not-allowed'
+          : isListenMuted
+          ? 'bg-red-500/35 border-red-300 text-red-100'
+          : !isMicEnabled
           ? 'bg-red-400/30 border-red-400 text-red-300'
           : isSpeaking
           ? 'bg-green-400/50 border-green-400 text-white'
-          : 'bg-black/30 border-white/25 text-white/60'
+          : 'bg-black/30 border-white/25 text-white/70 hover:bg-white/25'
       }`}
-      style={{ animation: isSpeaking && !isMuted ? 'pulsemic 1.2s ease infinite' : 'none' }}
+      style={{ animation: isSpeaking && isMicEnabled && !isListenMuted ? 'pulsemic 1.2s ease infinite' : 'none' }}
     >
-      {isMuted ? <IconMicOff /> : <IconMic />}
-    </div>
+      {isListenMuted || !isMicEnabled ? <IconMicOff /> : <IconMic />}
+    </button>
   );
 }
 
@@ -188,7 +212,7 @@ function OpponentSeat({
           />
         )}
         {voiceEnabled ? (
-          <OppVoiceIndicator participantId={id} roomName={roomName} participantName={player?.name} />
+          <OppVoiceControl participantId={id} roomName={roomName} participantName={player?.name} />
         ) : (
           <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 border bg-black/30 border-white/25 text-white/45">
             <IconMicOff />
@@ -304,6 +328,7 @@ const MOVE_THRESHOLD_PX = 10;
 const TOUCH_TAP_MAX_MS = 260;
 const EDGE_ZONE_PX = 56;
 const MAX_AUTO_SCROLL_PX = 18;
+const BLUFF_SUIT_SORT_ORDER = ['♠', '♥', '♦', '♣'];
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
@@ -334,6 +359,27 @@ function moveToken(order, token, toIndex) {
   return next;
 }
 
+function sortHandEntriesForBluff(entries = []) {
+  const rankIndex = (rank) => {
+    const idx = RANKS.indexOf(rank);
+    return idx >= 0 ? idx : 999;
+  };
+  const suitIndex = (suit) => {
+    const idx = BLUFF_SUIT_SORT_ORDER.indexOf(suit);
+    return idx >= 0 ? idx : 999;
+  };
+
+  return [...entries]
+    .sort((a, b) => {
+      const byRank = rankIndex(a?.card?.rank) - rankIndex(b?.card?.rank);
+      if (byRank !== 0) return byRank;
+      const bySuit = suitIndex(a?.card?.suit) - suitIndex(b?.card?.suit);
+      if (bySuit !== 0) return bySuit;
+      return (a?.handIndex ?? 0) - (b?.handIndex ?? 0);
+    })
+    .map((entry) => entry.token);
+}
+
 // ══════════════════════════════════════════════════════════════
 // MAIN GAME ARENA
 // ══════════════════════════════════════════════════════════════
@@ -351,6 +397,7 @@ export default function GameArena({ gameState, myId, roomCode = '', actions, voi
   const cardNodeRefs = useRef(new Map());
   const displayOrderRef = useRef([]);
   const handEntriesRef = useRef([]);
+  const bluffInitialSortRoundRef = useRef(null);
   const autoScrollRafRef = useRef(0);
   const interactionRef = useRef({
     pointerId: null,
@@ -417,6 +464,7 @@ export default function GameArena({ gameState, myId, roomCode = '', actions, voi
   const myTurnCount        = gameState?.turnCount ?? 0;
   const canKnock           = myTurnCount >= (config.minTurnsToKnock ?? 1);
   const myCardCount        = Array.isArray(myCards) ? myCards.length : 0;
+  const myRoundSum         = handSum(myCards, jokerCard);
   const turnDeadlineAt     = Number(gameState?.turnDeadlineAt || 0);
   const totalTurnMs        = Math.max(5000, (Number(config?.turnTimeSec) || 90) * 1000);
   const timerActive        = gameState?.status === 'playing' && turnDeadlineAt > 0;
@@ -474,6 +522,25 @@ export default function GameArena({ gameState, myId, roomCode = '', actions, voi
     });
     setSelectedTokens((prev) => prev.filter((token) => latestSet.has(token)));
   }, [myCards]);
+
+  useEffect(() => {
+    if (!isBluffMode) {
+      bluffInitialSortRoundRef.current = null;
+      return;
+    }
+    if (gameState?.status !== 'playing') {
+      bluffInitialSortRoundRef.current = null;
+      return;
+    }
+
+    const activeRound = Number(gameState?.round || 0);
+    if (!Number.isFinite(activeRound) || activeRound <= 0) return;
+    if (bluffInitialSortRoundRef.current === activeRound) return;
+    if (!handEntries.length) return;
+
+    setDisplayOrder(sortHandEntriesForBluff(handEntries));
+    bluffInitialSortRoundRef.current = activeRound;
+  }, [isBluffMode, gameState?.status, gameState?.round, handEntries]);
 
   useEffect(() => { setSelectedTokens([]); }, [phase, currentTurnId]);
 
@@ -1366,7 +1433,9 @@ export default function GameArena({ gameState, myId, roomCode = '', actions, voi
                 <div className="text-white font-black text-xs leading-tight">
                   {myPlayer.name}&nbsp;<span className="text-white/40 font-bold text-[10px]">(YOU)</span>
                 </div>
-                <div className="text-yellow-400 text-xs font-black leading-tight">Cards: {myCardCount}</div>
+                <div className="text-yellow-400 text-xs font-black leading-tight">
+                  {isBluffMode ? `Cards: ${myCardCount}` : `Current Sum: ${myRoundSum}`}
+                </div>
               </div>
               {hasVoice ? (
                 <MyVoiceButton />
