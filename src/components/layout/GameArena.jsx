@@ -341,7 +341,6 @@ export default function GameArena({ gameState, myId, roomCode = '', actions, voi
   const [selectedTokens,  setSelectedTokens]  = useState([]);
   const [displayOrder,    setDisplayOrder]    = useState([]);
   const [dragToken,       setDragToken]       = useState('');
-  const [hoverToken,      setHoverToken]      = useState('');
   const [isDragging,      setIsDragging]      = useState(false);
   const [turnFlash,       setTurnFlash]       = useState(false);
   const [nowMs,           setNowMs]           = useState(() => Date.now());
@@ -604,7 +603,6 @@ export default function GameArena({ gameState, myId, roomCode = '', actions, voi
     };
     setIsDragging(false);
     setDragToken('');
-    setHoverToken('');
   };
 
   useEffect(() => () => resetInteraction(), []);
@@ -1487,16 +1485,15 @@ export default function GameArena({ gameState, myId, roomCode = '', actions, voi
 	                  ? clamp((cardIdx - (displayCards.length - 1) / 2) * 0.7, -6, 6)
 	                  : 0;
                 const isDragged = dragToken === card.token;
-                const isHovered = hoverToken === card.token;
                 const overlap = isBluffMode && cardIdx > 0
-                  ? ((isChosen || isHovered || isDragged) ? 0 : -bluffOverlapPx)
+                  ? ((isChosen || isDragged) ? 0 : -bluffOverlapPx)
                   : 0;
-                const spreadX = (isChosen || isHovered) && isBluffMode
+                const spreadX = isChosen && isBluffMode
                   ? (cardIdx - (displayCards.length - 1) / 2) * 1.6
                   : 0;
                 const liftY = isDragged
                   ? -58
-                  : (isHovered ? -56 : (isChosen ? -42 : 0));
+                  : (isChosen ? -42 : 0);
 
                 return (
                   <motion.div
@@ -1506,15 +1503,8 @@ export default function GameArena({ gameState, myId, roomCode = '', actions, voi
                       else cardNodeRefs.current.delete(card.token);
                     }}
                     data-token={card.token}
-                    animate={{ y: liftY, x: spreadX, scale: isChosen ? 1.08 : (isHovered ? 1.05 : 1), rotate: baseAngle }}
-                    whileHover={canSelectHand ? { scale: 1.05 } : {}}
+                    animate={{ y: liftY, x: spreadX, scale: isChosen ? 1.08 : 1, rotate: baseAngle }}
                     transition={{ type: 'spring', stiffness: 400, damping: 22 }}
-                    onHoverStart={() => {
-                      if (!isDragging) setHoverToken(card.token);
-                    }}
-                    onHoverEnd={() => {
-                      setHoverToken((prev) => (prev === card.token ? '' : prev));
-                    }}
                     onPointerDown={(event) => onCardPointerDown(card.token, event)}
                     onPointerMove={onCardPointerMove}
                     onPointerUp={onCardPointerUp}
@@ -1527,8 +1517,8 @@ export default function GameArena({ gameState, myId, roomCode = '', actions, voi
 	                      position: 'relative',
                       overflow: 'visible',
 	                      marginLeft: overlap,
-                      marginRight: (isBluffMode && (isChosen || isHovered || isDragged)) ? 6 : 0,
-                      zIndex: isDragged ? 640 : (isHovered ? 560 + cardIdx : (isChosen ? 460 + cardIdx : 20 + cardIdx)),
+                      marginRight: (isBluffMode && (isChosen || isDragged)) ? 6 : 0,
+                      zIndex: isDragged ? 640 : (isChosen ? 460 + cardIdx : 20 + cardIdx),
                       cursor: isDragging ? 'grabbing' : 'grab',
                     }}
 	                  >

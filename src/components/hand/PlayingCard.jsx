@@ -99,8 +99,6 @@ export function CardBack({ size = 'md', style = {}, className = '', onClick }) {
   const sizes = { sm: 'w-11 h-16', md: 'w-[62px] h-[88px]', lg: 'w-[76px] h-[108px]' };
   return (
     <motion.div
-      whileHover={onClick ? { y: -6, scale: 1.04 } : {}}
-      transition={{ type: 'spring', stiffness: 300, damping: 20 }}
       onClick={onClick}
       style={style}
       className={[
