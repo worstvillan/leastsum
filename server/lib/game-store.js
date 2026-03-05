@@ -1,4 +1,11 @@
-import { adminDelete, adminGet, adminPatch, adminSet, runAdminTransaction } from './firebase-rest.js';
+import {
+  adminDelete,
+  adminGet,
+  adminPatch,
+  adminRequest,
+  adminSet,
+  runAdminTransaction,
+} from './firebase-rest.js';
 import { decryptEngineState, encryptEngineState } from './game-crypto.js';
 import { buildAllPrivateProjections, buildPublicProjection, GAME_VERSION } from './game-engine.js';
 
@@ -104,3 +111,16 @@ export async function deleteLegacyRoom(roomCode) {
   await adminDelete(`rooms/${roomCode}`);
 }
 
+export async function listRoomCodesShallow(limit = 32) {
+  const max = Math.max(1, Math.min(128, Number(limit) || 32));
+  const resp = await adminRequest({
+    path: 'roomsV2',
+    method: 'GET',
+    query: { shallow: 'true' },
+  });
+  if (!resp.ok) {
+    return [];
+  }
+  const keys = Object.keys(resp.data || {});
+  return keys.slice(0, max);
+}

@@ -9,8 +9,9 @@ import {
 } from '../../src/utils/gameUtils.js';
 
 export const GAME_VERSION = 2;
-export const DEFAULT_TURN_TIME_SEC = 45;
+export const DEFAULT_TURN_TIME_SEC = 90;
 export const RECLAIM_STALE_MS = 30_000;
+export const WAITING_TTL_MS = 30 * 60 * 1000;
 const BLUFF_PHASE_PLAY = 'bluff_play';
 
 const DEFAULT_CONFIG = {
@@ -163,9 +164,47 @@ function resetTurnDeadline(engine) {
   engine.turnDeadlineAt = Date.now() + resolveTurnTimeSec(engine.config || {}) * 1000;
 }
 
+export function touchWaitingActivity(engine, now = Date.now()) {
+  if (!engine || typeof engine !== 'object') return;
+  if (engine.status !== 'waiting') return;
+  engine.waitingLastActivityAt = Number(now);
+}
+
+export function isWaitingRoomExpired(engine, now = Date.now(), fallbackActivityAt = 0) {
+  if (!engine || typeof engine !== 'object') return false;
+  if (engine.status !== 'waiting') return false;
+  const baseTs = Number(
+    engine.waitingLastActivityAt
+    || engine.updatedAt
+    || fallbackActivityAt
+    || 0,
+  );
+  if (!Number.isFinite(baseTs) || baseTs <= 0) return false;
+  return now - baseTs > WAITING_TTL_MS;
+}
+
 function resetTimeoutProgress(engine) {
   engine.timeoutStreak = 0;
   engine.timeoutCycleIds = [];
+}
+
+function getTimeoutStrike(player) {
+  return Number(player?.consecutiveTimeouts || 0);
+}
+
+function resetTimeoutStrike(engine, playerId) {
+  if (!playerId) return;
+  const player = engine?.players?.[playerId];
+  if (!player) return;
+  player.consecutiveTimeouts = 0;
+}
+
+function incrementTimeoutStrike(engine, playerId) {
+  const player = engine?.players?.[playerId];
+  if (!player) return 0;
+  const next = getTimeoutStrike(player) + 1;
+  player.consecutiveTimeouts = next;
+  return next;
 }
 
 function nextTurn(engine, nextPhase = null) {
@@ -380,6 +419,15 @@ function finalizeBluffPendingPlayers(engine) {
   });
 }
 
+function finalizeBluffClaimerIfHandEmpty(engine, playerId) {
+  ensureBluffCollections(engine);
+  if (!playerId) return;
+  const hand = Array.isArray(engine.hands?.[playerId]) ? engine.hands[playerId] : [];
+  if (hand.length > 0) return;
+  engine.bluffPendingFinish = engine.bluffPendingFinish.filter((id) => id !== playerId);
+  addToBluffFinishOrder(engine, playerId);
+}
+
 function checkBluffGameOver(engine) {
   const activeIds = activeBluffIds(engine);
   if (activeIds.length > 1) return false;
@@ -517,6 +565,7 @@ export function createWaitingEngine({ roomCode, hostPlayerId, hostName, hostUid 
         uid: hostUid,
         order: 0,
         score: 0,
+        consecutiveTimeouts: 0,
         eliminated: false,
         bluffFinished: false,
         connected: true,
@@ -549,6 +598,7 @@ export function createWaitingEngine({ roomCode, hostPlayerId, hostName, hostUid 
     knockerFailed: false,
     jokerCard: null,
     turnDeadlineAt: null,
+    waitingLastActivityAt: now,
     updatedAt: now,
   };
 }
@@ -617,6 +667,7 @@ export function startGame(engine, actorPlayerId) {
   resetTimeoutProgress(engine);
   Object.values(engine.players || {}).forEach((player) => {
     player.bluffFinished = false;
+    player.consecutiveTimeouts = 0;
   });
   resetTurnDeadline(engine);
 }
@@ -632,6 +683,7 @@ export function updateConfig(engine, actorPlayerId, patch) {
 
   const nextConfig = sanitizeConfigPatch(patch, engine.config || DEFAULT_CONFIG);
   engine.config = nextConfig;
+  touchWaitingActivity(engine);
 }
 
 export function joinWaitingRoom(engine, { playerId, name, uid }) {
@@ -657,12 +709,14 @@ export function joinWaitingRoom(engine, { playerId, name, uid }) {
     uid,
     order: Object.keys(players).length,
     score: 0,
+    consecutiveTimeouts: 0,
     eliminated: false,
     bluffFinished: false,
     connected: true,
     lastSeenAt: now,
   };
   engine.players = players;
+  touchWaitingActivity(engine);
 }
 
 export function reclaimPlayer(engine, { playerId, uid, nameHint }) {
@@ -679,10 +733,14 @@ export function reclaimPlayer(engine, { playerId, uid, nameHint }) {
   player.uid = uid;
   player.connected = true;
   player.lastSeenAt = now;
+  if (!Number.isFinite(Number(player.consecutiveTimeouts))) {
+    player.consecutiveTimeouts = 0;
+  }
   if (!player.name && nameHint) {
     player.name = nameHint;
     player.nameKey = normalizeName(nameHint);
   }
+  touchWaitingActivity(engine);
 }
 
 export function throwCards(engine, actorPlayerId, indices) {
@@ -725,6 +783,7 @@ export function throwCards(engine, actorPlayerId, indices) {
     throw new ApiError(400, 'Invalid throw.');
   }
 
+  resetTimeoutStrike(engine, actorPlayerId);
   engine.hands[actorPlayerId] = hand;
   resetTimeoutProgress(engine);
   resetTurnDeadline(engine);
@@ -782,6 +841,7 @@ export function pickCard(engine, actorPlayerId, source) {
     pile.push(...pendingThrown.slice(0, -1));
   }
 
+  resetTimeoutStrike(engine, actorPlayerId);
   engine.hands[actorPlayerId] = hand;
   engine.pile = pile;
   engine.previousCard = pendingThrown[pendingThrown.length - 1];
@@ -869,6 +929,7 @@ export function knock(engine, actorPlayerId) {
 
   const survivors = Object.values(updatedPlayers).filter((player) => !player?.eliminated);
 
+  resetTimeoutStrike(engine, actorPlayerId);
   engine.players = updatedPlayers;
   engine.roundResults = roundResults;
   appendRoundHistory(engine, roundResults);
@@ -917,6 +978,17 @@ export function bluffPlaceClaim(engine, actorPlayerId, indices, declaredRankInpu
     throw new ApiError(400, `Declared rank must stay ${lifecycleRank} for this claim chain.`);
   }
 
+  if (activeClaim?.claimerId && activeClaim.claimerId !== actorPlayerId) {
+    // Previous claim becomes unchallengeable once a new claim is placed.
+    // If that claimer already has zero cards, finalize immediately.
+    finalizeBluffClaimerIfHandEmpty(engine, activeClaim.claimerId);
+    if (checkBluffGameOver(engine)) {
+      resetTimeoutProgress(engine);
+      return { resolved: 'gameover', phase: BLUFF_PHASE_PLAY };
+    }
+  }
+
+  resetTimeoutStrike(engine, actorPlayerId);
   const playedCards = [];
   picked.forEach((idx) => {
     playedCards.unshift(hand.splice(idx, 1)[0]);
@@ -976,30 +1048,24 @@ export function bluffPass(engine, actorPlayerId) {
   if (!claim || !claim.claimerId || !Array.isArray(claim.cards) || !claim.cards.length) {
     throw new ApiError(400, 'No claim available to pass/challenge.');
   }
-  if (claim.claimerId === actorPlayerId) {
-    throw new ApiError(400, 'Claimer cannot pass this claim.');
-  }
-
-  const passers = Array.isArray(claim.passers) ? [...claim.passers] : [];
-  if (passers.includes(actorPlayerId)) {
-    throw new ApiError(400, 'You already passed on this claim.');
-  }
-  passers.push(actorPlayerId);
-  engine.bluffActiveClaim = { ...claim, passers };
-  pushBluffHistory(engine, {
-    type: 'pass',
-    byPlayerId: actorPlayerId,
-    claimerId: claim.claimerId,
-    declaredRank: claim.declaredRank,
-    passCount: passers.length,
-    cardCount: Array.isArray(claim.cards) ? claim.cards.length : 0,
-  });
-
   const activeIds = activeBluffIds(engine);
   const others = activeIds.filter((id) => id !== claim.claimerId);
-  const allOthersPassed = others.every((id) => passers.includes(id));
+  const passers = Array.isArray(claim.passers) ? [...claim.passers] : [];
+  const allOthersPassedBeforeAction = others.every((id) => passers.includes(id));
 
-  if (allOthersPassed) {
+  if (claim.claimerId === actorPlayerId) {
+    if (!allOthersPassedBeforeAction) {
+      throw new ApiError(400, 'Claimer can pass only after others pass or object.');
+    }
+    resetTimeoutStrike(engine, actorPlayerId);
+    pushBluffHistory(engine, {
+      type: 'pass',
+      byPlayerId: actorPlayerId,
+      claimerId: claim.claimerId,
+      declaredRank: claim.declaredRank,
+      passCount: passers.length,
+      cardCount: Array.isArray(claim.cards) ? claim.cards.length : 0,
+    });
     pushBluffHistory(engine, {
       type: 'close',
       byPlayerId: claim.claimerId,
@@ -1016,6 +1082,55 @@ export function bluffPass(engine, actorPlayerId) {
       return { resolved: 'gameover' };
     }
 
+    // Claimer chose to pass: next turn moves clockwise from claimer.
+    advanceTurnFromPlayer(engine, claim.claimerId);
+    resetTimeoutProgress(engine);
+    return { resolved: 'closed', phase: BLUFF_PHASE_PLAY };
+  }
+
+  if (passers.includes(actorPlayerId)) {
+    throw new ApiError(400, 'You already passed on this claim.');
+  }
+  resetTimeoutStrike(engine, actorPlayerId);
+  passers.push(actorPlayerId);
+  engine.bluffActiveClaim = { ...claim, passers };
+  pushBluffHistory(engine, {
+    type: 'pass',
+    byPlayerId: actorPlayerId,
+    claimerId: claim.claimerId,
+    declaredRank: claim.declaredRank,
+    passCount: passers.length,
+    cardCount: Array.isArray(claim.cards) ? claim.cards.length : 0,
+  });
+
+  const allOthersPassed = others.every((id) => passers.includes(id));
+  if (allOthersPassed) {
+    const claimerHandCount = Array.isArray(engine.hands?.[claim.claimerId])
+      ? engine.hands[claim.claimerId].length
+      : 0;
+    if (claimerHandCount === 0) {
+      // A zero-card claimer should not receive another turn once all others passed.
+      pushBluffHistory(engine, {
+        type: 'close',
+        byPlayerId: claim.claimerId,
+        declaredRank: claim.declaredRank,
+        cardCount: Array.isArray(engine.bluffLivePile) ? engine.bluffLivePile.length : 0,
+      });
+      engine.bluffAsidePile = [...engine.bluffAsidePile, ...engine.bluffLivePile];
+      engine.bluffLivePile = [];
+      engine.bluffLiveTrail = [];
+      engine.bluffActiveClaim = null;
+      finalizeBluffPendingPlayers(engine);
+      if (checkBluffGameOver(engine)) {
+        resetTimeoutProgress(engine);
+        return { resolved: 'gameover' };
+      }
+      advanceTurnFromPlayer(engine, claim.claimerId);
+      resetTimeoutProgress(engine);
+      return { resolved: 'closed', phase: BLUFF_PHASE_PLAY };
+    }
+
+    // Do not close automatically. Return control to claimer for either play or pass.
     if (isBluffActivePlayer(engine, claim.claimerId)) {
       engine.currentTurnIdx = resolveCurrentTurnOrderIndex(engine, claim.claimerId);
       engine.turnCount = (engine.turnCount ?? 0) + 1;
@@ -1024,12 +1139,13 @@ export function bluffPass(engine, actorPlayerId) {
     } else {
       advanceTurnFromPlayer(engine, claim.claimerId);
     }
-  } else {
-    advanceTurnFromPlayer(engine, actorPlayerId);
+    resetTimeoutProgress(engine);
+    return { resolved: 'claimer_turn', phase: BLUFF_PHASE_PLAY };
   }
 
   resetTimeoutProgress(engine);
-  return { resolved: allOthersPassed ? 'closed' : 'passed', phase: BLUFF_PHASE_PLAY };
+  advanceTurnFromPlayer(engine, actorPlayerId);
+  return { resolved: 'passed', phase: BLUFF_PHASE_PLAY };
 }
 
 export function bluffObjection(engine, actorPlayerId) {
@@ -1051,6 +1167,7 @@ export function bluffObjection(engine, actorPlayerId) {
     throw new ApiError(400, 'Claimer cannot object own claim.');
   }
 
+  resetTimeoutStrike(engine, actorPlayerId);
   const truthful = claim.cards.every((card) => card?.rank === claim.declaredRank);
   const loserId = truthful ? actorPlayerId : claim.claimerId;
 
@@ -1238,6 +1355,7 @@ export function leaveRoom(engine, actorPlayerId) {
     }
   }
 
+  touchWaitingActivity(engine);
   resetTimeoutProgress(engine);
   return { deleteRoom: false };
 }
@@ -1312,6 +1430,7 @@ export function playAgain(engine) {
     players[id] = {
       ...players[id],
       score: 0,
+      consecutiveTimeouts: 0,
       eliminated: false,
       bluffFinished: false,
     };
@@ -1344,6 +1463,7 @@ export function playAgain(engine) {
   engine.bluffPendingFinish = [];
   engine.bluffLastObjectionReveal = null;
   engine.jokerCard = null;
+  touchWaitingActivity(engine);
   resetTimeoutProgress(engine);
   engine.turnDeadlineAt = null;
 }
@@ -1395,11 +1515,19 @@ function applyTimeoutThrowFlow(engine, turnId) {
 function applyTimeoutBluffFlow(engine, turnId) {
   ensureBluffCollections(engine);
   if (engine.bluffActiveClaim) {
-    if (engine.bluffActiveClaim.claimerId === turnId) {
-      advanceTurnFromPlayer(engine, turnId);
-      return;
+    const claim = engine.bluffActiveClaim;
+    if (claim?.claimerId === turnId) {
+      const activeIds = activeBluffIds(engine);
+      const others = activeIds.filter((id) => id !== turnId);
+      const passers = Array.isArray(claim.passers) ? claim.passers : [];
+      const readyToClose = others.every((id) => passers.includes(id));
+      if (!readyToClose) {
+        advanceTurnFromPlayer(engine, turnId);
+        return;
+      }
     }
-    // Active claim timeout becomes auto-pass.
+    // Active claim timeout becomes auto-pass. When it's claimer's returned turn,
+    // this closes the chain if everyone else has already passed.
     bluffPass(engine, turnId);
     return;
   }
@@ -1479,28 +1607,32 @@ export function timeoutTick(engine, actorPlayerId) {
     return { applied: true, ended: 'gameover' };
   }
 
-  const priorTimeoutCycle = Array.isArray(engine.timeoutCycleIds)
-    ? engine.timeoutCycleIds.filter((id) => activeIds.includes(id))
-    : [];
-
   const turnId = currentTurnId(engine);
   if (!turnId) {
     nextTurn(engine, isBluffMode(engine) ? BLUFF_PHASE_PLAY : 'throw');
-  } else if (isBluffMode(engine)) {
+    return { applied: true, deleteRoom: false };
+  }
+
+  const strike = incrementTimeoutStrike(engine, turnId);
+  engine.timeoutStreak = strike;
+  engine.timeoutCycleIds = [turnId];
+
+  if (strike >= 2) {
+    const leaveResult = leaveRoom(engine, turnId);
+    return {
+      applied: true,
+      deleteRoom: !!leaveResult?.deleteRoom,
+      kickedPlayerId: turnId,
+      kickedForInactivity: true,
+    };
+  }
+
+  if (isBluffMode(engine)) {
     applyTimeoutBluffFlow(engine, turnId);
   } else if (engine.phase === 'pick') {
     applyTimeoutPickFlow(engine, turnId);
   } else {
     applyTimeoutThrowFlow(engine, turnId);
-  }
-
-  const cycleSet = new Set(priorTimeoutCycle);
-  if (turnId) cycleSet.add(turnId);
-  engine.timeoutCycleIds = [...cycleSet];
-  engine.timeoutStreak = engine.timeoutCycleIds.length;
-
-  if (activeIds.every((id) => cycleSet.has(id))) {
-    return { applied: true, deleteRoom: true };
   }
 
   return { applied: true, deleteRoom: false };

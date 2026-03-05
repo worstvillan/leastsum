@@ -7,7 +7,7 @@ import {
   useParticipants,
 } from '@livekit/components-react';
 import {
-  avatarColor, handSum, isJokerMatch, playSound, vibrate,
+  avatarColor, isJokerMatch, playSound, vibrate,
 } from '../../utils/gameUtils';
 import PlayingCard, { CardBack, MiniCardBack } from '../hand/PlayingCard';
 import ResultsOverlay from './ResultsOverlay';
@@ -159,6 +159,7 @@ function OpponentSeat({
   timerPct = 0,
   timerUrgent = false,
   remainingSec = 0,
+  showScore = true,
 }) {
   const count  = cardCount || 0;
   const fanned = Math.min(count, 8);
@@ -176,7 +177,7 @@ function OpponentSeat({
           }`}
         >
           <span className="font-black text-white text-xs whitespace-nowrap">{player.name}</span>
-          <span className="text-yellow-400 font-black text-[10px]">{player.score || 0}</span>
+          {showScore ? <span className="text-yellow-400 font-black text-[10px]">{player.score || 0}</span> : null}
         </div>
         {showTurnTimer && (
           <TurnTimerBadge
@@ -300,6 +301,7 @@ function getOppSlots(n) {
 
 const LONG_PRESS_MS = 200;
 const MOVE_THRESHOLD_PX = 10;
+const TOUCH_TAP_MAX_MS = 260;
 const EDGE_ZONE_PX = 56;
 const MAX_AUTO_SCROLL_PX = 18;
 
@@ -360,6 +362,9 @@ export default function GameArena({ gameState, myId, roomCode = '', actions, voi
     startX: 0,
     startY: 0,
     lastClientX: 0,
+    downAtMs: 0,
+    startScrollLeft: 0,
+    didScrollWhilePending: false,
     longPressTimer: null,
     canSelectAtDown: false,
     isDragging: false,
@@ -412,9 +417,9 @@ export default function GameArena({ gameState, myId, roomCode = '', actions, voi
   const bluffReveal        = bluffLastObjectionReveal || bluffLastReveal || null;
   const myTurnCount        = gameState?.turnCount ?? 0;
   const canKnock           = myTurnCount >= (config.minTurnsToKnock ?? 1);
-  const myHandSum          = handSum(myCards, jokerCard);
+  const myCardCount        = Array.isArray(myCards) ? myCards.length : 0;
   const turnDeadlineAt     = Number(gameState?.turnDeadlineAt || 0);
-  const totalTurnMs        = Math.max(5000, (Number(config?.turnTimeSec) || 45) * 1000);
+  const totalTurnMs        = Math.max(5000, (Number(config?.turnTimeSec) || 90) * 1000);
   const timerActive        = gameState?.status === 'playing' && turnDeadlineAt > 0;
   const remainingMs        = timerActive ? Math.max(0, turnDeadlineAt - nowMs) : 0;
   const remainingSec       = timerActive ? Math.ceil(remainingMs / 1000) : 0;
@@ -590,6 +595,9 @@ export default function GameArena({ gameState, myId, roomCode = '', actions, voi
       startX: 0,
       startY: 0,
       lastClientX: 0,
+      downAtMs: 0,
+      startScrollLeft: 0,
+      didScrollWhilePending: false,
       longPressTimer: null,
       canSelectAtDown: false,
       isDragging: false,
@@ -695,6 +703,9 @@ export default function GameArena({ gameState, myId, roomCode = '', actions, voi
       startX: event.clientX,
       startY: event.clientY,
       lastClientX: event.clientX,
+      downAtMs: Date.now(),
+      startScrollLeft: handStripRef.current?.scrollLeft || 0,
+      didScrollWhilePending: false,
       longPressTimer: null,
       canSelectAtDown: canSelectHand,
       isDragging: false,
@@ -738,6 +749,17 @@ export default function GameArena({ gameState, myId, roomCode = '', actions, voi
     }
   };
 
+  const onHandStripScroll = () => {
+    const interaction = interactionRef.current;
+    if (interaction.pointerType !== 'touch') return;
+    if (interaction.mode !== 'pending' && interaction.mode !== 'scroll') return;
+    const currentScroll = handStripRef.current?.scrollLeft || 0;
+    if (Math.abs(currentScroll - Number(interaction.startScrollLeft || 0)) > 2) {
+      interaction.didScrollWhilePending = true;
+      interaction.mode = 'scroll';
+    }
+  };
+
   const onCardPointerUp = (event) => {
     const interaction = interactionRef.current;
     if (interaction.pointerId !== event.pointerId) return;
@@ -748,7 +770,9 @@ export default function GameArena({ gameState, myId, roomCode = '', actions, voi
       const dx = event.clientX - interaction.startX;
       const dy = event.clientY - interaction.startY;
       const moved = Math.abs(dx) > MOVE_THRESHOLD_PX || Math.abs(dy) > MOVE_THRESHOLD_PX;
-      if (!moved && interaction.canSelectAtDown) {
+      const isTouchTap = interaction.pointerType !== 'touch'
+        || (Date.now() - Number(interaction.downAtMs || 0)) <= TOUCH_TAP_MAX_MS;
+      if (!moved && !interaction.didScrollWhilePending && isTouchTap && interaction.canSelectAtDown) {
         toggleSelection(interaction.activeToken);
       }
     }
@@ -778,9 +802,25 @@ export default function GameArena({ gameState, myId, roomCode = '', actions, voi
     .map((token) => byToken.get(token)?.handIndex)
     .filter((idx) => Number.isInteger(idx));
   const hasSelection = selectedHandIndices.length > 0;
+  const bluffActivePlayerIds = effectiveTurnOrder.filter((id) => {
+    const player = gameState?.players?.[id];
+    if (!player) return false;
+    return !player?.bluffFinished;
+  });
+  const bluffOtherPlayerCount = activeBluffClaim?.claimerId
+    ? bluffActivePlayerIds.filter((id) => id !== activeBluffClaim.claimerId).length
+    : 0;
+  const claimerReadyToClose = Boolean(
+    activeBluffClaim
+      && activeBluffClaim?.claimerId === myId
+      && Number(activeBluffClaim?.passCount || 0) >= Math.max(0, bluffOtherPlayerCount),
+  );
   const canThrow = isMyTurn && phase === 'throw' && hasSelection;
   const canBluffPlay = isMyTurn && phase === 'bluff_play' && hasSelection;
-  const canBluffPass = isMyTurn && phase === 'bluff_play' && !!activeBluffClaim && activeBluffClaim?.claimerId !== myId;
+  const canBluffPass = isMyTurn
+    && phase === 'bluff_play'
+    && !!activeBluffClaim
+    && (activeBluffClaim?.claimerId !== myId || claimerReadyToClose);
   const canBluffObjection = isMyTurn && phase === 'bluff_play' && !!activeBluffClaim && activeBluffClaim?.claimerId !== myId;
   const isThrowMatch = !!previousOpenCard && selectedCards.length > 0 && selectedCards[0]?.rank === previousOpenCard.rank;
   const canPick = isMyTurn && phase === 'pick';
@@ -905,10 +945,10 @@ export default function GameArena({ gameState, myId, roomCode = '', actions, voi
             <select
               value={declaredRank}
               onChange={(e) => setDeclaredRank(e.target.value)}
-              className="px-3 py-2 rounded-2xl bg-black/32 border border-white/30 text-white text-xs font-black uppercase tracking-wider shadow-[inset_0_1px_0_rgba(255,255,255,0.18)]"
+              className="px-3 py-2 rounded-2xl bg-gradient-to-b from-emerald-800/75 to-cyan-900/70 border border-emerald-200/45 text-emerald-50 text-xs font-black uppercase tracking-wider shadow-[0_4px_0_rgba(0,0,0,0.26),inset_0_1px_0_rgba(255,255,255,0.2)] focus:outline-none focus:ring-2 focus:ring-emerald-300/60"
             >
               {['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'].map((rank) => (
-                <option key={rank} value={rank} className="text-black">{rank}</option>
+                <option key={rank} value={rank} className="bg-slate-900 text-emerald-100">{rank}</option>
               ))}
             </select>
           ) : (
@@ -936,7 +976,7 @@ export default function GameArena({ gameState, myId, roomCode = '', actions, voi
                 : 'bg-white/10 text-white/20 cursor-not-allowed'
             }`}
           >
-            Pass
+            {claimerReadyToClose ? 'Pass · Close' : 'Pass'}
           </button>
           <button
             onClick={onBluffObjectionAttempt}
@@ -977,22 +1017,29 @@ export default function GameArena({ gameState, myId, roomCode = '', actions, voi
               Live risk (masked cards)
             </div>
             {Number(bluffLiveRisk?.totalCards || 0) > 0 ? (
-              <div className="max-h-36 overflow-y-auto pr-1">
-                <div className="flex flex-wrap items-end justify-center gap-3 pb-1">
+              <div className="space-y-2">
+                <div className="flex items-end justify-center">
                   <MaskedCardStack
                     count={Number(bluffLiveRisk?.totalCards || 0)}
                     isActive={!!activeBluffClaim}
                     label="Live Total"
                   />
-                  {bluffRiskByPlayer.map((entry) => (
-                    <MaskedCardStack
-                      key={`risk-${entry.playerId}`}
-                      count={Number(entry?.cardCount || 0)}
-                      isActive={activeBluffClaim?.claimerId === entry?.playerId}
-                      label="By"
-                      playerName={resolvePlayerName(entry?.playerId)}
-                    />
-                  ))}
+                </div>
+                <div className="text-[9px] font-black uppercase tracking-[0.12em] text-white/60 text-center">
+                  Cards by player
+                </div>
+                <div className="overflow-x-auto overflow-y-hidden pb-1 [scrollbar-width:thin]">
+                  <div className="flex items-end gap-3 w-max min-w-full justify-center px-1">
+                    {bluffRiskByPlayer.map((entry) => (
+                      <MaskedCardStack
+                        key={`risk-${entry.playerId}`}
+                        count={Number(entry?.cardCount || 0)}
+                        isActive={activeBluffClaim?.claimerId === entry?.playerId}
+                        label="By"
+                        playerName={resolvePlayerName(entry?.playerId)}
+                      />
+                    ))}
+                  </div>
                 </div>
               </div>
             ) : (
@@ -1009,8 +1056,13 @@ export default function GameArena({ gameState, myId, roomCode = '', actions, voi
                 {bluffHistory.map((entry, idx) => (
                   <div
                     key={`${entry?.type || 'event'}-${Number(entry?.at || 0)}-${idx}`}
-                    className="px-2 py-1 rounded-xl border border-white/15 bg-black/24 text-[10px] font-black tracking-wide text-white/85"
+                    className={`px-2 py-1 rounded-xl border text-[10px] font-black tracking-wide ${
+                      idx === 0
+                        ? 'border-yellow-300/70 bg-yellow-400/18 text-yellow-50 shadow-[0_0_0_1px_rgba(251,191,36,0.35),0_6px_14px_rgba(0,0,0,0.26)]'
+                        : 'border-white/15 bg-black/24 text-white/85'
+                    }`}
                   >
+                    {idx === 0 ? 'Latest · ' : ''}
                     {entry?.type === 'claim' && `${resolvePlayerName(entry?.byPlayerId)} claimed ${entry?.cardCount || 0} x ${entry?.declaredRank || '?'}`}
                     {entry?.type === 'pass' && `${resolvePlayerName(entry?.byPlayerId)} passed`}
                     {entry?.type === 'close' && `Claim chain closed (${entry?.cardCount || 0} cards moved out)`}
@@ -1115,11 +1167,15 @@ export default function GameArena({ gameState, myId, roomCode = '', actions, voi
 
         {/* My total score — top right */}
         <div className="fixed top-3 right-3 z-40 bg-black/35 backdrop-blur-md border border-white/20 rounded-2xl px-4 py-2 text-right">
-          <div className="text-[9px] font-black text-white/50 uppercase tracking-[1.5px]">Score</div>
-          <div className="text-2xl font-black text-yellow-400 leading-tight"
-               style={{ fontFamily:"'Fredoka One',cursive" }}>
-            {myPlayer.score || 0}
-          </div>
+          {!isBluffMode ? (
+            <>
+              <div className="text-[9px] font-black text-white/50 uppercase tracking-[1.5px]">Score</div>
+              <div className="text-2xl font-black text-yellow-400 leading-tight"
+                   style={{ fontFamily:"'Fredoka One',cursive" }}>
+                {myPlayer.score || 0}
+              </div>
+            </>
+          ) : null}
           <button
             onClick={actions.leaveRoom}
             className="mt-1 text-[10px] font-black uppercase tracking-wide text-white/70 hover:text-white"
@@ -1134,7 +1190,7 @@ export default function GameArena({ gameState, myId, roomCode = '', actions, voi
           {opponents.map(([id, p]) => (
             <div key={id} className="flex justify-between gap-4 text-xs font-black">
               <span className="text-white truncate max-w-[64px]">{p.name}</span>
-              <span className="text-yellow-400">{p.score || 0}</span>
+              {!isBluffMode ? <span className="text-yellow-400">{p.score || 0}</span> : null}
             </div>
           ))}
         </div>
@@ -1153,6 +1209,7 @@ export default function GameArena({ gameState, myId, roomCode = '', actions, voi
                 roomName={resolvedRoomCode}
                 fanRotation={slot.fan}
                 voiceEnabled={hasVoice}
+                showScore={!isBluffMode}
                 showTurnTimer={timerActive && id === currentTurnId}
                 timerPct={timerPct}
                 timerUrgent={timerUrgent}
@@ -1311,7 +1368,7 @@ export default function GameArena({ gameState, myId, roomCode = '', actions, voi
                 <div className="text-white font-black text-xs leading-tight">
                   {myPlayer.name}&nbsp;<span className="text-white/40 font-bold text-[10px]">(YOU)</span>
                 </div>
-                <div className="text-yellow-400 text-xs font-black leading-tight">Sum: {myHandSum}</div>
+                <div className="text-yellow-400 text-xs font-black leading-tight">Cards: {myCardCount}</div>
               </div>
               {hasVoice ? (
                 <MyVoiceButton />
@@ -1408,6 +1465,7 @@ export default function GameArena({ gameState, myId, roomCode = '', actions, voi
           <div className="relative z-10 pb-5 px-4 overflow-visible">
             <div
               ref={handStripRef}
+              onScroll={onHandStripScroll}
               style={{
                 overflowX: 'auto',
                 overflowY: 'hidden',

@@ -4,6 +4,7 @@ import {
   bluffPass,
   bluffPlaceClaim,
   createWaitingEngine,
+  isWaitingRoomExpired,
   joinWaitingRoom,
   knock,
   leaveRoom,
@@ -25,6 +26,8 @@ import {
 } from './game-engine.js';
 import {
   deleteRoomEverywhere,
+  listRoomCodesShallow,
+  readEngine,
   readRoomMeta,
   transactionEngine,
   writeWholeRoom,
@@ -39,6 +42,53 @@ function clone(value) {
 function assertRoomMeta(meta) {
   if (!meta || typeof meta !== 'object') {
     throw new ApiError(404, 'Room not found.');
+  }
+}
+
+const WAITING_EXPIRED_MESSAGE = 'Room expired due to inactivity. Create or join a new room.';
+let lastWaitingSweepAt = 0;
+
+function waitingFallbackActivity(meta) {
+  return Number(meta?.updatedAt || meta?.createdAt || 0);
+}
+
+async function deleteIfWaitingExpired(roomCode, knownMeta = null) {
+  const meta = knownMeta || (await readRoomMeta(roomCode));
+  if (!meta) return false;
+
+  const engine = await readEngine(roomCode);
+  if (!engine || typeof engine !== 'object') {
+    await deleteRoomEverywhere(roomCode);
+    return true;
+  }
+
+  if (!isWaitingRoomExpired(engine, Date.now(), waitingFallbackActivity(meta))) {
+    return false;
+  }
+
+  await deleteRoomEverywhere(roomCode);
+  return true;
+}
+
+async function maybeSweepExpiredWaitingRooms() {
+  const now = Date.now();
+  if (now - lastWaitingSweepAt < 60_000) return;
+  lastWaitingSweepAt = now;
+
+  let roomCodes = [];
+  try {
+    roomCodes = await listRoomCodesShallow(8);
+  } catch {
+    return;
+  }
+
+  for (const code of roomCodes) {
+    if (!/^[A-Z0-9]{4}$/.test(String(code || ''))) continue;
+    try {
+      await deleteIfWaitingExpired(code);
+    } catch {
+      // best-effort sweep; ignore per-room failures
+    }
   }
 }
 
@@ -84,9 +134,17 @@ async function runEngineMutation(roomCode, mutateFn, updateMetaFn) {
   };
 }
 
-async function assertSecureRoomExists(roomCode) {
+async function assertSecureRoomExists(roomCode, { enforceWaitingTtl = false } = {}) {
   const meta = await readRoomMeta(roomCode);
-  if (meta) return;
+  if (meta) {
+    if (enforceWaitingTtl) {
+      const expired = await deleteIfWaitingExpired(roomCode, meta);
+      if (expired) {
+        throw new ApiError(404, WAITING_EXPIRED_MESSAGE);
+      }
+    }
+    return;
+  }
 
   const legacy = await adminGet(`rooms/${roomCode}`);
   if (legacy) {
@@ -97,6 +155,8 @@ async function assertSecureRoomExists(roomCode) {
 }
 
 export async function createRoomService(uid, rawName, configPatch = null) {
+  await maybeSweepExpiredWaitingRooms();
+
   const playerName = sanitizePlayerName(rawName);
   const playerId = makePlayerId();
 
@@ -142,7 +202,8 @@ export async function createRoomService(uid, rawName, configPatch = null) {
 }
 
 export async function joinRoomService(uid, rawName, roomCode) {
-  await assertSecureRoomExists(roomCode);
+  await maybeSweepExpiredWaitingRooms();
+  await assertSecureRoomExists(roomCode, { enforceWaitingTtl: true });
 
   const playerName = sanitizePlayerName(rawName);
   const nameKey = normalizeName(playerName);
@@ -209,7 +270,7 @@ export async function joinRoomService(uid, rawName, roomCode) {
 }
 
 export async function reclaimRoomService(uid, roomCode, rawName = '') {
-  await assertSecureRoomExists(roomCode);
+  await assertSecureRoomExists(roomCode, { enforceWaitingTtl: true });
 
   const nameHint = String(rawName || '').trim();
   let assignedPlayerId = null;
@@ -246,6 +307,7 @@ export async function reclaimRoomService(uid, roomCode, rawName = '') {
 }
 
 export async function startGameService(roomCode, actorPlayerId) {
+  await assertSecureRoomExists(roomCode, { enforceWaitingTtl: true });
   await runEngineMutation(roomCode, (engine) => {
     markPlayerConnected(engine, actorPlayerId, true);
     startGame(engine, actorPlayerId);
@@ -255,6 +317,7 @@ export async function startGameService(roomCode, actorPlayerId) {
 }
 
 export async function updateConfigService(roomCode, actorPlayerId, configPatch) {
+  await assertSecureRoomExists(roomCode, { enforceWaitingTtl: true });
   await runEngineMutation(roomCode, (engine) => {
     markPlayerConnected(engine, actorPlayerId, true);
     updateConfig(engine, actorPlayerId, configPatch || {});
@@ -332,14 +395,24 @@ export async function knockService(roomCode, actorPlayerId) {
 export async function timeoutService(roomCode, actorPlayerId) {
   let mutation;
   try {
-    mutation = await runEngineMutation(roomCode, (engine) => {
-      markPlayerConnected(engine, actorPlayerId, true);
-      const result = timeoutTick(engine, actorPlayerId);
-      if (result?.deleteRoom) {
-        return { deleteRoom: true, reason: 'INACTIVITY_FULL_CYCLE' };
-      }
-      return result;
-    });
+    mutation = await runEngineMutation(
+      roomCode,
+      (engine) => {
+        markPlayerConnected(engine, actorPlayerId, true);
+        return timeoutTick(engine, actorPlayerId);
+      },
+      (meta, engine) => {
+        const nextMembers = { ...(meta.members || {}) };
+        Object.entries(nextMembers).forEach(([memberUid, playerId]) => {
+          if (!engine.players?.[playerId]) {
+            delete nextMembers[memberUid];
+          }
+        });
+        meta.members = nextMembers;
+        meta.hostPlayerId = engine.hostPlayerId || null;
+        return meta;
+      },
+    );
   } catch (err) {
     if (err instanceof ApiError && err.status === 404) {
       // Room might already be deleted by another timeout arbiter tick.
@@ -349,7 +422,7 @@ export async function timeoutService(roomCode, actorPlayerId) {
   }
 
   if (mutation.roomDeleted) {
-    console.info(`[timeout] room ${roomCode} deleted after full inactivity cycle`);
+    console.info(`[timeout] room ${roomCode} deleted after inactivity kick/leave left no players`);
     return { ok: true, roomDeleted: true };
   }
 
@@ -357,6 +430,7 @@ export async function timeoutService(roomCode, actorPlayerId) {
 }
 
 export async function leaveService(roomCode, actorPlayerId, uid) {
+  await assertSecureRoomExists(roomCode, { enforceWaitingTtl: true });
   const mutation = await runEngineMutation(
     roomCode,
     (engine) => {

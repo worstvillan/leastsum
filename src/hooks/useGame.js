@@ -174,6 +174,7 @@ const SAFE_ERROR_MESSAGES = new Set([
   'You are not a member of this room.',
   'Too many join attempts. Please wait a minute and try again.',
   'Too many restore attempts. Please wait a minute and try again.',
+  'Room expired due to inactivity. Create or join a new room.',
 ]);
 
 const INTERNAL_ERROR_PATTERNS = [
@@ -391,7 +392,13 @@ export function useGame() {
           setError('Room ended due to inactivity or all players left.');
           return;
         }
-        setPublicState(snap.val());
+        const nextPublic = snap.val();
+        if (myId && nextPublic?.players && !nextPublic.players[myId]) {
+          clearLocalRoomState(roomCode);
+          setError('You were removed due to inactivity.');
+          return;
+        }
+        setPublicState(nextPublic);
       },
       () => {
         clearLocalRoomState(roomCode);

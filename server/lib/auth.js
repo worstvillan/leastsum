@@ -65,7 +65,11 @@ export async function requireAuthContext(req) {
 }
 
 export async function requireRoomMember(roomCode, uid) {
-  const playerId = await adminGet(`roomsV2/${roomCode}/meta/members/${uid}`);
+  const meta = await adminGet(`roomsV2/${roomCode}/meta`);
+  if (!meta || typeof meta !== 'object') {
+    throw new ApiError(404, 'Room not found.');
+  }
+  const playerId = meta?.members?.[uid];
   if (!playerId || typeof playerId !== 'string') {
     throw new ApiError(403, 'You are not a member of this room.');
   }
@@ -73,6 +77,8 @@ export async function requireRoomMember(roomCode, uid) {
 }
 
 export async function getRoomMembership(roomCode, uid) {
-  const playerId = await adminGet(`roomsV2/${roomCode}/meta/members/${uid}`);
+  const meta = await adminGet(`roomsV2/${roomCode}/meta`);
+  if (!meta || typeof meta !== 'object') return null;
+  const playerId = meta?.members?.[uid];
   return typeof playerId === 'string' ? playerId : null;
 }
