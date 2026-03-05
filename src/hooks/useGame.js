@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { onValue, ref } from 'firebase/database';
 import { db, ensureAuthUser } from '../firebase';
+import { RANKS } from '../utils/gameUtils';
 
 const STORAGE_CLIENT_ID = 'leastsum.clientId';
 const STORAGE_LAST_ROOM = 'leastsum.lastRoomCode';
@@ -93,6 +94,21 @@ function mapProjectionToGameState(publicState, privateState, myId) {
     pile.push(pileTop);
   }
 
+  const legacyBluffLiveCards = Array.isArray(publicState.bluffLivePileCards) ? publicState.bluffLivePileCards : [];
+  const legacyByPlayerCount = {};
+  legacyBluffLiveCards.forEach((entry) => {
+    const playerId = entry?.byPlayerId;
+    if (!playerId) return;
+    legacyByPlayerCount[playerId] = (legacyByPlayerCount[playerId] || 0) + 1;
+  });
+  const fallbackLiveRiskPublic = {
+    totalCards: Number(publicState.bluffLivePileCount || legacyBluffLiveCards.length || 0),
+    byPlayer: Object.entries(legacyByPlayerCount).map(([playerId, cardCount]) => ({
+      playerId,
+      cardCount: Number(cardCount || 0),
+    })),
+  };
+
   return {
     roomCode: publicState.roomCode,
     status: publicState.status,
@@ -110,10 +126,27 @@ function mapProjectionToGameState(publicState, privateState, myId) {
     pile,
     previousCard: publicState.previousCard || null,
     pendingThrownCards: createArrayOfLength(Number(publicState.pendingThrownCount || 0), {}),
+    bluffActiveClaimPublic: publicState.bluffActiveClaimPublic || null,
+    bluffLivePileCount: Number(publicState.bluffLivePileCount || 0),
+    bluffAsideCount: Number(publicState.bluffAsideCount || 0),
+    bluffLiveRiskPublic: publicState.bluffLiveRiskPublic || fallbackLiveRiskPublic,
+    bluffChainHistoryPublic: Array.isArray(publicState.bluffChainHistoryPublic)
+      ? publicState.bluffChainHistoryPublic
+      : (Array.isArray(publicState.bluffClaimHistory) ? publicState.bluffClaimHistory : []),
+    bluffLivePileCards: legacyBluffLiveCards,
+    bluffClaimHistory: Array.isArray(publicState.bluffClaimHistory) ? publicState.bluffClaimHistory : [],
+    bluffFinishOrder: Array.isArray(publicState.bluffFinishOrder) ? publicState.bluffFinishOrder : [],
+    bluffLastObjectionReveal: publicState.bluffLastObjectionReveal || null,
+    // Compatibility for older UI paths.
+    bluffDeclaredRank: publicState.bluffDeclaredRank || publicState.bluffActiveClaimPublic?.declaredRank || null,
+    bluffLastClaim: publicState.bluffLastClaim || publicState.bluffActiveClaimPublic || null,
+    bluffLastReveal: publicState.bluffLastReveal || publicState.bluffLastObjectionReveal || null,
     jokerCard: publicState.jokerCard || null,
     knocker: publicState.knocker || null,
     knockerFailed: !!publicState.knockerFailed,
     roundResults: publicState.roundResults || null,
+    roundHistory: Array.isArray(publicState.roundHistory) ? publicState.roundHistory : [],
+    roundReveal: publicState.roundReveal || null,
     turnDeadlineAt: publicState.turnDeadlineAt || null,
     hands,
   };
@@ -181,7 +214,11 @@ function resolveApiUrl(path) {
   if (/^https?:\/\//i.test(path)) return path;
   if (!GAME_API_BASE_URL) return path;
   const normalized = String(path || '');
-  return `${GAME_API_BASE_URL}${normalized.startsWith('/') ? normalized : `/${normalized}`}`;
+  const withSlash = normalized.startsWith('/') ? normalized : `/${normalized}`;
+  if (GAME_API_BASE_URL.endsWith('/api') && withSlash.startsWith('/api/')) {
+    return `${GAME_API_BASE_URL}${withSlash.slice(4)}`;
+  }
+  return `${GAME_API_BASE_URL}${withSlash}`;
 }
 
 function resolveHostPlayerId(state) {
@@ -383,7 +420,7 @@ export function useGame() {
   }, [roomCode, myId, clearLocalRoomState]);
 
   const requestVoiceToken = useCallback(async (room, name) => {
-    const endpoint = import.meta.env.VITE_VOICE_TOKEN_ENDPOINT || '/api/get-token';
+    const endpoint = resolveApiUrl(import.meta.env.VITE_VOICE_TOKEN_ENDPOINT || '/api/get-token');
     try {
       const token = await ensureIdToken();
       const res = await fetch(endpoint, {
@@ -516,7 +553,15 @@ export function useGame() {
       });
       return { ok: true, ...result };
     } catch (err) {
-      return { ok: false, ...(err?.payload || {}), reason: err?.payload?.reason };
+      const backendMessage = String(err?.payload?.error || '').trim();
+      const fallbackMessage = String(err?.message || '').trim();
+      return {
+        ok: false,
+        ...(err?.payload || {}),
+        reason: err?.payload?.reason,
+        error: backendMessage,
+        message: backendMessage || fallbackMessage,
+      };
     }
   };
 
@@ -541,6 +586,48 @@ export function useGame() {
       // no-op; state remains authoritative from server
     }
   };
+
+  const bluffPlaceClaimAction = async (indices, declaredRank) => {
+    try {
+      const normalized = String(declaredRank || '').trim().toUpperCase();
+      if (!RANKS.includes(normalized)) {
+        return { ok: false, message: 'Invalid declared rank.' };
+      }
+      const result = await gameApiPost('bluffPlaceClaim', {
+        roomCode: roomCodeRef.current,
+        indices: Array.isArray(indices) ? indices : [],
+        declaredRank: normalized,
+      });
+      return { ok: true, ...result };
+    } catch (err) {
+      return { ok: false, ...(err?.payload || {}), message: err?.message || 'Bluff play failed.' };
+    }
+  };
+
+  const bluffPassAction = async () => {
+    try {
+      const result = await gameApiPost('bluffPass', {
+        roomCode: roomCodeRef.current,
+      });
+      return { ok: true, ...result };
+    } catch (err) {
+      return { ok: false, ...(err?.payload || {}), message: err?.message || 'Pass failed.' };
+    }
+  };
+
+  const bluffObjectionAction = async () => {
+    try {
+      const result = await gameApiPost('bluffObjection', {
+        roomCode: roomCodeRef.current,
+      });
+      return { ok: true, ...result };
+    } catch (err) {
+      return { ok: false, ...(err?.payload || {}), message: err?.message || 'Objection failed.' };
+    }
+  };
+
+  const bluffPlayAction = async (indices, declaredRank) => bluffPlaceClaimAction(indices, declaredRank);
+  const bluffChallengeAction = async () => bluffObjectionAction();
 
   const knockAction = async () => {
     try {
@@ -589,7 +676,11 @@ export function useGame() {
 
       timeoutInFlightRef.current = true;
       try {
-        await gameApiPost('timeout', { roomCode });
+        const result = await gameApiPost('timeout', { roomCode });
+        if (result?.roomDeleted) {
+          clearLocalRoomState(roomCode);
+          setError('Room ended due to inactivity or all players left.');
+        }
       } catch {
         // harmless when timeout is not due or another client already processed it
       } finally {
@@ -598,7 +689,7 @@ export function useGame() {
     }, 1000);
 
     return () => clearInterval(id);
-  }, [gameApiPost, gameState, roomCode]);
+  }, [clearLocalRoomState, gameApiPost, gameState, roomCode]);
 
   useEffect(() => {
     if (!error) return undefined;
@@ -636,5 +727,10 @@ export function useGame() {
     discardDrawn,
     matchCards,
     knock: knockAction,
+    bluffPlaceClaim: bluffPlaceClaimAction,
+    bluffPlay: bluffPlayAction,
+    bluffPass: bluffPassAction,
+    bluffObjection: bluffObjectionAction,
+    bluffChallenge: bluffChallengeAction,
   };
 }

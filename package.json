@@ -6,6 +6,7 @@
   "homepage": "https://github.com/naredlarohithreddy/leastsum",
   "scripts": {
     "dev": "vite",
+    "api:server": "node server.js",
     "voice:server": "node server.js",
     "test:voice-api": "node scripts/test-voice-api.mjs",
     "build": "vite build",

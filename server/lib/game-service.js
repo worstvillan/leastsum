@@ -1,5 +1,8 @@
 import { ApiError } from './http.js';
 import {
+  bluffObjection,
+  bluffPass,
+  bluffPlaceClaim,
   createWaitingEngine,
   joinWaitingRoom,
   knock,
@@ -14,6 +17,7 @@ import {
   playAgain,
   reclaimPlayer,
   sanitizePlayerName,
+  sanitizeConfigPatch,
   startGame,
   throwCards,
   timeoutTick,
@@ -92,7 +96,7 @@ async function assertSecureRoomExists(roomCode) {
   throw new ApiError(404, 'Room not found.');
 }
 
-export async function createRoomService(uid, rawName) {
+export async function createRoomService(uid, rawName, configPatch = null) {
   const playerName = sanitizePlayerName(rawName);
   const playerId = makePlayerId();
 
@@ -109,6 +113,9 @@ export async function createRoomService(uid, rawName) {
       hostName: playerName,
       hostUid: uid,
     });
+    if (configPatch && typeof configPatch === 'object') {
+      engine.config = sanitizeConfigPatch(configPatch, engine.config);
+    }
 
     const now = Date.now();
     const meta = {
@@ -266,6 +273,44 @@ export async function throwService(roomCode, actorPlayerId, indices) {
   return { ok: true, ...(actionInfo || {}) };
 }
 
+export async function bluffPlaceClaimService(roomCode, actorPlayerId, indices, declaredRank) {
+  let actionInfo = null;
+  await runEngineMutation(roomCode, (engine) => {
+    markPlayerConnected(engine, actorPlayerId, true);
+    actionInfo = bluffPlaceClaim(engine, actorPlayerId, indices, declaredRank);
+    return { ok: true };
+  });
+  return { ok: true, ...(actionInfo || {}) };
+}
+
+export async function bluffPlayService(roomCode, actorPlayerId, indices, declaredRank) {
+  return bluffPlaceClaimService(roomCode, actorPlayerId, indices, declaredRank);
+}
+
+export async function bluffPassService(roomCode, actorPlayerId) {
+  let actionInfo = null;
+  await runEngineMutation(roomCode, (engine) => {
+    markPlayerConnected(engine, actorPlayerId, true);
+    actionInfo = bluffPass(engine, actorPlayerId);
+    return { ok: true };
+  });
+  return { ok: true, ...(actionInfo || {}) };
+}
+
+export async function bluffObjectionService(roomCode, actorPlayerId) {
+  let actionInfo = null;
+  await runEngineMutation(roomCode, (engine) => {
+    markPlayerConnected(engine, actorPlayerId, true);
+    actionInfo = bluffObjection(engine, actorPlayerId);
+    return { ok: true };
+  });
+  return { ok: true, ...(actionInfo || {}) };
+}
+
+export async function bluffChallengeService(roomCode, actorPlayerId) {
+  return bluffObjectionService(roomCode, actorPlayerId);
+}
+
 export async function pickService(roomCode, actorPlayerId, source) {
   await runEngineMutation(roomCode, (engine) => {
     markPlayerConnected(engine, actorPlayerId, true);
@@ -285,16 +330,26 @@ export async function knockService(roomCode, actorPlayerId) {
 }
 
 export async function timeoutService(roomCode, actorPlayerId) {
-  const mutation = await runEngineMutation(roomCode, (engine) => {
-    markPlayerConnected(engine, actorPlayerId, true);
-    const result = timeoutTick(engine, actorPlayerId);
-    if (result?.deleteRoom) {
-      return { deleteRoom: true, reason: 'INACTIVITY_FULL_CYCLE' };
+  let mutation;
+  try {
+    mutation = await runEngineMutation(roomCode, (engine) => {
+      markPlayerConnected(engine, actorPlayerId, true);
+      const result = timeoutTick(engine, actorPlayerId);
+      if (result?.deleteRoom) {
+        return { deleteRoom: true, reason: 'INACTIVITY_FULL_CYCLE' };
+      }
+      return result;
+    });
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) {
+      // Room might already be deleted by another timeout arbiter tick.
+      return { ok: true, roomDeleted: true, reason: 'ROOM_NOT_FOUND' };
     }
-    return result;
-  });
+    throw err;
+  }
 
   if (mutation.roomDeleted) {
+    console.info(`[timeout] room ${roomCode} deleted after full inactivity cycle`);
     return { ok: true, roomDeleted: true };
   }
 

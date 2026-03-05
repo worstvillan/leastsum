@@ -13,6 +13,8 @@ const AUTOFILL = {
 };
 
 const CONFIG_DEFAULTS = {
+  gameMode:        'leastsum',
+  bluffDeckCount:  1,
   cardsPerPlayer:  6,
   maxPlayers:      4,
   elimScore:       200,
@@ -213,42 +215,90 @@ export function WaitingRoom({ roomCode, isHost, gameState, myId, onUpdateConfig,
               exit={{ opacity: 0, height: 0 }} className="overflow-hidden mb-5"
             >
               <div className="bg-white/8 border border-white/15 rounded-2xl p-4 space-y-5">
+                <div className="space-y-2">
+                  <span className="text-[10px] font-black text-white/55 uppercase tracking-widest block">
+                    Game Mode
+                  </span>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      onClick={() => upd('gameMode', 'leastsum')}
+                      className={`py-2 rounded-xl text-[11px] font-black uppercase tracking-wider transition-all ${
+                        cfg.gameMode === 'leastsum'
+                          ? 'bg-yellow-400 text-black shadow-[0_3px_0_rgba(0,0,0,0.25)]'
+                          : 'bg-white/10 text-white/65 border border-white/20'
+                      }`}
+                    >
+                      Least Sum
+                    </button>
+                    <button
+                      onClick={() => upd('gameMode', 'bluff')}
+                      className={`py-2 rounded-xl text-[11px] font-black uppercase tracking-wider transition-all ${
+                        cfg.gameMode === 'bluff'
+                          ? 'bg-yellow-400 text-black shadow-[0_3px_0_rgba(0,0,0,0.25)]'
+                          : 'bg-white/10 text-white/65 border border-white/20'
+                      }`}
+                    >
+                      Bluff
+                    </button>
+                  </div>
+                </div>
 
-                <SliderRow label="Cards per Player" min={4} max={10} value={cfg.cardsPerPlayer}
-                  onChange={v => upd('cardsPerPlayer', v)} />
+                {cfg.gameMode === 'bluff' && (
+                  <SliderRow
+                    label="Bluff Deck Count"
+                    min={1}
+                    max={10}
+                    value={cfg.bluffDeckCount}
+                    onChange={(v) => upd('bluffDeckCount', v)}
+                    display={`${cfg.bluffDeckCount} deck${cfg.bluffDeckCount === 1 ? '' : 's'}`}
+                  />
+                )}
 
                 <SliderRow label="Max Players" min={2} max={8} value={cfg.maxPlayers}
                   onChange={v => upd('maxPlayers', v)} />
 
-                <SliderRow label="Elimination Score" min={50} max={300} step={25} value={cfg.elimScore}
-                  onChange={v => upd('elimScore', v)} display={`${cfg.elimScore} pts`} />
+                {cfg.gameMode === 'leastsum' && (
+                  <>
+                    <SliderRow label="Elimination Score" min={50} max={300} step={25} value={cfg.elimScore}
+                      onChange={v => upd('elimScore', v)} display={`${cfg.elimScore} pts`} />
 
-                <SliderRow label="Min Turns to Knock" min={0} max={5} value={cfg.minTurnsToKnock}
-                  onChange={v => upd('minTurnsToKnock', v)}
-                  display={cfg.minTurnsToKnock === 0 ? 'Any' : `${cfg.minTurnsToKnock}`} />
+                    <SliderRow label="Cards per Player" min={4} max={10} value={cfg.cardsPerPlayer}
+                      onChange={v => upd('cardsPerPlayer', v)} />
 
-                <SliderRow label="Knocker Penalty" min={0} max={100} step={10} value={cfg.knockerPenalty}
-                  onChange={v => upd('knockerPenalty', v)} display={`${cfg.knockerPenalty} pts`} />
+                    <SliderRow label="Min Turns to Knock" min={0} max={5} value={cfg.minTurnsToKnock}
+                      onChange={v => upd('minTurnsToKnock', v)}
+                      display={cfg.minTurnsToKnock === 0 ? 'Any' : `${cfg.minTurnsToKnock}`} />
 
-                {/* Joker toggle */}
-                <div className="flex items-center justify-between">
-                  <div>
-                    <span className="text-[10px] font-black text-white/55 uppercase tracking-widest block">
-                      Joker Card (−1 pt)
-                    </span>
-                    <span className="text-[9px] text-white/30">One card in deck is worth −1</span>
+                    <SliderRow label="Knocker Penalty" min={0} max={100} step={10} value={cfg.knockerPenalty}
+                      onChange={v => upd('knockerPenalty', v)} display={`${cfg.knockerPenalty} pts`} />
+
+                    {/* Joker toggle */}
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <span className="text-[10px] font-black text-white/55 uppercase tracking-widest block">
+                          Joker Card (-1 pt)
+                        </span>
+                        <span className="text-[9px] text-white/30">One card in deck is worth -1</span>
+                      </div>
+                      <button
+                        onClick={() => upd('useJoker', !cfg.useJoker)}
+                        className={`relative w-12 h-6 rounded-full border-2 transition-all flex-shrink-0 ${
+                          cfg.useJoker ? 'bg-yellow-400 border-yellow-400' : 'bg-white/15 border-white/25'
+                        }`}
+                      >
+                        <div className={`absolute top-0.5 w-4 h-4 rounded-full transition-all ${
+                          cfg.useJoker ? 'left-6 bg-black' : 'left-0.5 bg-white/60'
+                        }`} />
+                      </button>
+                    </div>
+                  </>
+                )}
+
+                {cfg.gameMode === 'bluff' && (
+                  <div className="px-3 py-2 bg-black/28 backdrop-blur-md border border-white/15 rounded-xl text-white/60 text-[10px] font-black uppercase tracking-wider">
+                    Bluff uses full-deck dealing. Knock and joker settings are disabled.
                   </div>
-                  <button
-                    onClick={() => upd('useJoker', !cfg.useJoker)}
-                    className={`relative w-12 h-6 rounded-full border-2 transition-all flex-shrink-0 ${
-                      cfg.useJoker ? 'bg-yellow-400 border-yellow-400' : 'bg-white/15 border-white/25'
-                    }`}
-                  >
-                    <div className={`absolute top-0.5 w-4 h-4 rounded-full transition-all ${
-                      cfg.useJoker ? 'left-6 bg-black' : 'left-0.5 bg-white/60'
-                    }`} />
-                  </button>
-                </div>
+                )}
               </div>
             </motion.div>
           )}
@@ -291,7 +341,7 @@ export function WaitingRoom({ roomCode, isHost, gameState, myId, onUpdateConfig,
             }`}
             style={{ fontFamily: "'Fredoka One', cursive", fontSize: 16 }}
           >
-            Start Game · {players.length} {players.length === 1 ? 'player' : 'players'}
+            Start {cfg.gameMode === 'bluff' ? 'Bluff' : 'Least Sum'} · {players.length} {players.length === 1 ? 'player' : 'players'}
           </button>
         ) : (
           <div className="flex items-center justify-center gap-2 py-3 mb-3">

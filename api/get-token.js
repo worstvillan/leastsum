@@ -12,9 +12,9 @@ function resolveTtlSeconds() {
 }
 
 function requireLiveKitConfig() {
-  const apiKey = process.env.LIVEKIT_API_KEY;
-  const apiSecret = process.env.LIVEKIT_API_SECRET;
-  const livekitUrl = process.env.LIVEKIT_URL;
+  const apiKey = process.env.LIVEKIT_API_KEY || process.env.VITE_LIVEKIT_API_KEY;
+  const apiSecret = process.env.LIVEKIT_API_SECRET || process.env.VITE_LIVEKIT_API_SECRET;
+  const livekitUrl = process.env.LIVEKIT_URL || process.env.VITE_LIVEKIT_URL;
 
   if (!apiKey || !apiSecret || !livekitUrl) {
     throw new ApiError(500, 'Missing LIVEKIT_API_KEY, LIVEKIT_API_SECRET, or LIVEKIT_URL');

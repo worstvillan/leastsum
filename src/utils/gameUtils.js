@@ -136,6 +136,25 @@ export function avatarColor(name) {
 
 // ── Web Audio sound synthesis (no files needed) ────────────────
 let _audioCtx = null;
+let _hasUserGesture = false;
+let _gestureBound = false;
+
+function ensureGestureBinding() {
+  if (_gestureBound || typeof window === 'undefined') return;
+  _gestureBound = true;
+
+  const markGesture = () => {
+    _hasUserGesture = true;
+    window.removeEventListener('pointerdown', markGesture, true);
+    window.removeEventListener('touchstart', markGesture, true);
+    window.removeEventListener('keydown', markGesture, true);
+  };
+
+  window.addEventListener('pointerdown', markGesture, true);
+  window.addEventListener('touchstart', markGesture, true);
+  window.addEventListener('keydown', markGesture, true);
+}
+
 function getCtx() {
   if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   return _audioCtx;
@@ -143,7 +162,12 @@ function getCtx() {
 
 export function playSound(type) {
   try {
+    ensureGestureBinding();
+    if (!_hasUserGesture) return;
     const ctx = getCtx();
+    if (ctx.state === 'suspended') {
+      ctx.resume().catch(() => {});
+    }
     const now = ctx.currentTime;
 
     if (type === 'draw') {
@@ -204,5 +228,9 @@ export function playSound(type) {
 }
 
 export function vibrate(pattern = 30) {
-  try { navigator.vibrate?.(pattern); } catch (_) {}
+  try {
+    ensureGestureBinding();
+    if (!_hasUserGesture) return;
+    navigator.vibrate?.(pattern);
+  } catch (_) {}
 }

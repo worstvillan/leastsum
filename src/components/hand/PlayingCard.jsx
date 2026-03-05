@@ -10,6 +10,7 @@ export default function PlayingCard({
   isMatchable = false,
   isDisabled  = false,
   isJoker     = false, // LATEST FEATURE: Visual indicator for -1 point Joker
+  isDraggable = false,
   size        = 'md',
   style       = {},
   className   = '',
@@ -20,6 +21,7 @@ export default function PlayingCard({
     sm: { w: 44,  h: 62,  cornerPx: 8,  top: 3, left: 4,  suitCls: 'text-xl'  },
     md: { w: 62,  h: 88,  cornerPx: 10, top: 4, left: 5,  suitCls: 'text-3xl' },
     lg: { w: 76,  h: 108, cornerPx: 12, top: 5, left: 6,  suitCls: 'text-4xl' },
+    compact: { w: 60, h: 86, cornerPx: 11, top: 4, left: 5, suitCls: 'text-3xl' },
   };
   const sz = sizes[size] ?? sizes.md;
 
@@ -35,10 +37,14 @@ export default function PlayingCard({
         'shadow-[3px_3px_0px_rgba(0,0,0,0.55)]',
         isSelected  ? 'ring-4 ring-blue-400 ring-offset-2 ring-offset-black/20 brightness-110' : '',
         isMatchable && !isSelected ? 'ring-[3px] ring-yellow-400 ring-offset-1' : '',
-        isDisabled  ? 'opacity-40 cursor-default' : 'cursor-pointer',
+        isDisabled  ? 'opacity-40 cursor-default' : (isDraggable ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'),
         className,
       ].filter(Boolean).join(' ')}
     >
+      {isDraggable && (
+        <div className="absolute top-1 left-1/2 -translate-x-1/2 w-4 h-1 rounded-full bg-slate-700/35 pointer-events-none" />
+      )}
+
       {/* JOKER VISUAL BADGE */}
       {isJoker && (
         <div className="absolute -top-3 -right-3 bg-yellow-400 text-black text-[9px] font-black px-2 py-0.5 rounded-md shadow-[0_2px_10px_rgba(250,204,21,0.5)] rotate-12 z-20 border border-black pointer-events-none">

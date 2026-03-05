@@ -1,11 +1,21 @@
 import { ApiError } from './http.js';
-import { freshDoubleDeck, hardShuffle, handSum } from '../../src/utils/gameUtils.js';
+import {
+  freshDoubleDeck,
+  hardShuffle,
+  handSum,
+  SUITS,
+  RANKS,
+  makeCard,
+} from '../../src/utils/gameUtils.js';
 
 export const GAME_VERSION = 2;
 export const DEFAULT_TURN_TIME_SEC = 45;
 export const RECLAIM_STALE_MS = 30_000;
+const BLUFF_PHASE_PLAY = 'bluff_play';
 
 const DEFAULT_CONFIG = {
+  gameMode: 'leastsum',
+  bluffDeckCount: 1,
   cardsPerPlayer: 6,
   maxPlayers: 4,
   elimScore: 200,
@@ -53,6 +63,26 @@ export function sanitizeConfigPatch(input = {}, current = DEFAULT_CONFIG) {
     return Number.isFinite(parsed) ? parsed : fallback;
   };
 
+  if (value.gameMode != null) {
+    const rawMode = String(value.gameMode).trim().toLowerCase();
+    if (!['leastsum', 'bluff'].includes(rawMode)) {
+      throw new ApiError(400, 'Game mode must be leastsum or bluff.');
+    }
+    next.gameMode = rawMode;
+  } else if (!['leastsum', 'bluff'].includes(String(next.gameMode || '').toLowerCase())) {
+    next.gameMode = 'leastsum';
+  }
+
+  if (value.bluffDeckCount != null) {
+    const parsedDeckCount = Number.parseInt(value.bluffDeckCount, 10);
+    if (!Number.isFinite(parsedDeckCount) || parsedDeckCount < 1 || parsedDeckCount > 10) {
+      throw new ApiError(400, 'Bluff deck count must be between 1 and 10.');
+    }
+    next.bluffDeckCount = parsedDeckCount;
+  } else if (!Number.isFinite(Number(next.bluffDeckCount))) {
+    next.bluffDeckCount = 1;
+  }
+
   next.cardsPerPlayer = Math.min(10, Math.max(4, asInt(value.cardsPerPlayer, next.cardsPerPlayer)));
   next.maxPlayers = Math.min(8, Math.max(2, asInt(value.maxPlayers, next.maxPlayers)));
   next.elimScore = Math.min(500, Math.max(50, asInt(value.elimScore, next.elimScore)));
@@ -61,10 +91,20 @@ export function sanitizeConfigPatch(input = {}, current = DEFAULT_CONFIG) {
   next.useJoker = Boolean(value.useJoker ?? next.useJoker);
   next.turnTimeSec = resolveTurnTimeSec(value.turnTimeSec != null ? value : next);
 
+  // Bluff keeps elimination threshold fixed; do not expose it as a bluff-tunable setting.
+  if (next.gameMode === 'bluff') {
+    next.elimScore = DEFAULT_CONFIG.elimScore;
+  }
+
   return next;
 }
 
 function activePlayerEntries(engine) {
+  if (isBluffMode(engine)) {
+    return Object.entries(engine.players || {})
+      .filter(([, player]) => !player?.bluffFinished)
+      .sort((a, b) => (a[1]?.order ?? 0) - (b[1]?.order ?? 0));
+  }
   return Object.entries(engine.players || {})
     .filter(([, player]) => !player?.eliminated)
     .sort((a, b) => (a[1]?.order ?? 0) - (b[1]?.order ?? 0));
@@ -73,6 +113,9 @@ function activePlayerEntries(engine) {
 function activeTurnOrder(engine) {
   const players = engine.players || {};
   const turnOrder = Array.isArray(engine.turnOrder) ? engine.turnOrder : [];
+  if (isBluffMode(engine)) {
+    return turnOrder.filter((id) => players[id] && !players[id].bluffFinished);
+  }
   return turnOrder.filter((id) => players[id] && !players[id].eliminated);
 }
 
@@ -93,6 +136,22 @@ function assertStarted(engine) {
   }
 }
 
+function isBluffMode(engine) {
+  return String(engine?.config?.gameMode || 'leastsum').toLowerCase() === 'bluff';
+}
+
+function assertLeastSumMode(engine) {
+  if (isBluffMode(engine)) {
+    throw new ApiError(400, 'Action is not available in bluff mode.');
+  }
+}
+
+function assertBluffMode(engine) {
+  if (!isBluffMode(engine)) {
+    throw new ApiError(400, 'Bluff action is available only in bluff mode.');
+  }
+}
+
 function assertPlayerTurn(engine, playerId) {
   const liveTurnId = currentTurnId(engine);
   if (liveTurnId && liveTurnId !== playerId) {
@@ -104,15 +163,21 @@ function resetTurnDeadline(engine) {
   engine.turnDeadlineAt = Date.now() + resolveTurnTimeSec(engine.config || {}) * 1000;
 }
 
-function nextTurn(engine) {
-  const players = engine.players || {};
-  const turnOrder = Array.isArray(engine.turnOrder) ? engine.turnOrder : [];
-  const activeOrder = turnOrder.filter((id) => players[id] && !players[id].eliminated);
+function resetTimeoutProgress(engine) {
+  engine.timeoutStreak = 0;
+  engine.timeoutCycleIds = [];
+}
+
+function nextTurn(engine, nextPhase = null) {
+  const activeOrder = activeTurnOrder(engine);
 
   if (activeOrder.length <= 1) {
+    if (isBluffMode(engine) && activeOrder.length === 1) {
+      addToBluffFinishOrder(engine, activeOrder[0]);
+    }
     engine.status = 'gameover';
     engine.turnDeadlineAt = null;
-    engine.phase = 'throw';
+    engine.phase = isBluffMode(engine) ? BLUFF_PHASE_PLAY : 'throw';
     engine.pendingThrownCards = null;
     return;
   }
@@ -121,14 +186,242 @@ function nextTurn(engine) {
   const activeIdx = activeOrder.indexOf(current);
   const nextActiveIdx = activeIdx >= 0 ? (activeIdx + 1) % activeOrder.length : 0;
   const nextId = activeOrder[nextActiveIdx];
-  const nextIdx = turnOrder.indexOf(nextId);
+  const fullTurnOrder = Array.isArray(engine.turnOrder) ? engine.turnOrder : [];
+  const nextIdx = fullTurnOrder.indexOf(nextId);
 
   engine.currentTurnIdx = nextIdx >= 0 ? nextIdx : 0;
   engine.turnCount = (engine.turnCount ?? 0) + 1;
-  engine.phase = 'throw';
+  engine.phase = nextPhase || (isBluffMode(engine) ? BLUFF_PHASE_PLAY : 'throw');
   engine.pendingThrownCards = null;
-  engine.timeoutStreak = 0;
+  resetTimeoutProgress(engine);
   resetTurnDeadline(engine);
+}
+
+function parseDeclaredRank(input) {
+  const declared = String(input || '').trim().toUpperCase();
+  if (!RANKS.includes(declared)) {
+    throw new ApiError(400, 'Declared rank is invalid.');
+  }
+  return declared;
+}
+
+function ensureBluffCollections(engine) {
+  if (!Array.isArray(engine.bluffLivePile)) engine.bluffLivePile = [];
+  if (!Array.isArray(engine.bluffAsidePile)) engine.bluffAsidePile = [];
+  if (!Array.isArray(engine.bluffFinishOrder)) engine.bluffFinishOrder = [];
+  if (!Array.isArray(engine.bluffPendingFinish)) engine.bluffPendingFinish = [];
+  if (!Array.isArray(engine.bluffLiveTrail)) engine.bluffLiveTrail = [];
+  if (!Array.isArray(engine.bluffClaimHistory)) engine.bluffClaimHistory = [];
+}
+
+function pushBluffHistory(engine, event = {}) {
+  ensureBluffCollections(engine);
+  const nextEvent = {
+    at: Date.now(),
+    ...event,
+  };
+  engine.bluffClaimHistory = [...engine.bluffClaimHistory, nextEvent].slice(-80);
+}
+
+const BLUFF_CHAIN_TERMINAL_TYPES = new Set(['close', 'objection', 'claim_cancelled_leave']);
+
+function sanitizeBluffChainEvent(event = {}) {
+  const type = String(event?.type || '').trim();
+  if (!type) return null;
+
+  const base = {
+    type,
+    at: Number(event?.at || 0),
+    byPlayerId: event?.byPlayerId || null,
+    claimerId: event?.claimerId || null,
+    declaredRank: event?.declaredRank || null,
+    cardCount: Number(event?.cardCount || 0),
+    passCount: Number(event?.passCount || 0),
+    truthful: typeof event?.truthful === 'boolean' ? event.truthful : null,
+    loserId: event?.loserId || null,
+  };
+
+  if (!['claim', 'pass', 'objection', 'close', 'claim_cancelled_leave'].includes(type)) {
+    return null;
+  }
+  return base;
+}
+
+function buildBluffChainHistoryPublic(engine) {
+  const fullHistory = Array.isArray(engine?.bluffClaimHistory) ? engine.bluffClaimHistory : [];
+  const hasActiveClaim = !!engine?.bluffActiveClaim;
+  if (!hasActiveClaim || !fullHistory.length) return [];
+
+  let startIdx = 0;
+  for (let i = fullHistory.length - 1; i >= 0; i -= 1) {
+    if (BLUFF_CHAIN_TERMINAL_TYPES.has(fullHistory[i]?.type)) {
+      startIdx = i + 1;
+      break;
+    }
+  }
+
+  return fullHistory
+    .slice(startIdx)
+    .map((entry) => sanitizeBluffChainEvent(entry))
+    .filter(Boolean);
+}
+
+function buildBluffLiveRiskPublic(engine) {
+  const liveTrail = Array.isArray(engine?.bluffLiveTrail) ? engine.bluffLiveTrail : [];
+  const totalCards = Array.isArray(engine?.bluffLivePile) ? engine.bluffLivePile.length : 0;
+  const byPlayerCount = new Map();
+
+  liveTrail.forEach((entry) => {
+    const playerId = entry?.byPlayerId || null;
+    if (!playerId) return;
+    byPlayerCount.set(playerId, (byPlayerCount.get(playerId) || 0) + 1);
+  });
+
+  const countedTotal = [...byPlayerCount.values()].reduce((sum, value) => sum + value, 0);
+  if (countedTotal < totalCards) {
+    const fallbackPlayerId = engine?.bluffActiveClaim?.claimerId || null;
+    if (fallbackPlayerId) {
+      byPlayerCount.set(
+        fallbackPlayerId,
+        (byPlayerCount.get(fallbackPlayerId) || 0) + (totalCards - countedTotal),
+      );
+    }
+  }
+
+  const orderByPlayerId = Object.fromEntries(
+    Object.entries(engine?.players || {}).map(([id, player]) => [id, Number(player?.order ?? 0)]),
+  );
+
+  return {
+    totalCards,
+    byPlayer: [...byPlayerCount.entries()]
+      .map(([playerId, cardCount]) => ({ playerId, cardCount }))
+      .filter((entry) => entry.playerId && entry.cardCount > 0)
+      .sort((a, b) => (orderByPlayerId[a.playerId] ?? 999) - (orderByPlayerId[b.playerId] ?? 999)),
+  };
+}
+
+function isBluffActivePlayer(engine, playerId) {
+  const player = engine.players?.[playerId];
+  return !!player && !player.bluffFinished;
+}
+
+function appendPendingFinish(engine, playerId) {
+  ensureBluffCollections(engine);
+  if (!playerId || !isBluffActivePlayer(engine, playerId)) return;
+  const handCount = Array.isArray(engine.hands?.[playerId]) ? engine.hands[playerId].length : 0;
+  if (handCount > 0) return;
+  if (engine.bluffFinishOrder.includes(playerId)) return;
+  if (engine.bluffPendingFinish.includes(playerId)) return;
+  engine.bluffPendingFinish.push(playerId);
+}
+
+function addToBluffFinishOrder(engine, playerId) {
+  ensureBluffCollections(engine);
+  if (!playerId) return;
+  if (engine.bluffFinishOrder.includes(playerId)) return;
+  const player = engine.players?.[playerId];
+  if (player) {
+    player.bluffFinished = true;
+    player.eliminated = false;
+  }
+  engine.bluffFinishOrder.push(playerId);
+}
+
+function activeBluffIds(engine) {
+  const players = engine.players || {};
+  const order = Array.isArray(engine.turnOrder) ? engine.turnOrder : [];
+  return order.filter((id) => players[id] && !players[id].bluffFinished);
+}
+
+function ensureCurrentTurnInActiveOrder(engine) {
+  const activeIds = activeBluffIds(engine);
+  if (!activeIds.length) return;
+  const current = currentTurnId(engine);
+  if (current && activeIds.includes(current)) return;
+  engine.currentTurnIdx = resolveCurrentTurnOrderIndex(engine, activeIds[0]);
+}
+
+function advanceTurnFromPlayer(engine, fromPlayerId) {
+  const activeIds = activeBluffIds(engine);
+  if (!activeIds.length) {
+    engine.turnDeadlineAt = null;
+    engine.status = 'gameover';
+    return;
+  }
+  if (activeIds.length === 1) {
+    const [lastPlayerId] = activeIds;
+    addToBluffFinishOrder(engine, lastPlayerId);
+    engine.status = 'gameover';
+    engine.turnDeadlineAt = null;
+    engine.phase = BLUFF_PHASE_PLAY;
+    return;
+  }
+
+  const pivot = activeIds.includes(fromPlayerId) ? fromPlayerId : activeIds[0];
+  const pivotIdx = activeIds.indexOf(pivot);
+  const nextId = activeIds[(pivotIdx + 1) % activeIds.length];
+  engine.currentTurnIdx = resolveCurrentTurnOrderIndex(engine, nextId);
+  engine.turnCount = (engine.turnCount ?? 0) + 1;
+  engine.phase = BLUFF_PHASE_PLAY;
+  engine.pendingThrownCards = null;
+  resetTurnDeadline(engine);
+}
+
+function finalizeBluffPendingPlayers(engine) {
+  ensureBluffCollections(engine);
+  const pending = [...engine.bluffPendingFinish];
+  engine.bluffPendingFinish = [];
+  pending.forEach((playerId) => {
+    const hand = engine.hands?.[playerId] || [];
+    if (Array.isArray(hand) && hand.length === 0) {
+      addToBluffFinishOrder(engine, playerId);
+    }
+  });
+}
+
+function checkBluffGameOver(engine) {
+  const activeIds = activeBluffIds(engine);
+  if (activeIds.length > 1) return false;
+  if (activeIds.length === 1) {
+    addToBluffFinishOrder(engine, activeIds[0]);
+  }
+  engine.status = 'gameover';
+  engine.phase = BLUFF_PHASE_PLAY;
+  engine.turnDeadlineAt = null;
+  return true;
+}
+
+function resolveCurrentTurnOrderIndex(engine, playerId) {
+  const turnOrder = Array.isArray(engine.turnOrder) ? engine.turnOrder : [];
+  const idx = turnOrder.indexOf(playerId);
+  if (idx >= 0) return idx;
+  return 0;
+}
+
+function appendRoundHistory(engine, roundResults) {
+  const previousHistory = Array.isArray(engine.roundHistory) ? engine.roundHistory : [];
+  engine.roundHistory = [
+    ...previousHistory,
+    {
+      round: Number(engine.round || 0),
+      at: Date.now(),
+      results: roundResults,
+    },
+  ].slice(-50);
+}
+
+function buildRoundRevealFromHands(engine) {
+  const reveal = {};
+  Object.entries(engine.players || {}).forEach(([id, player]) => {
+    if (player?.eliminated) return;
+    reveal[id] = Array.isArray(engine.hands?.[id]) ? engine.hands[id].map((card) => ({ ...card })) : [];
+  });
+  return {
+    round: Number(engine.round || 0),
+    shownAt: Date.now(),
+    handsByPlayer: reveal,
+  };
 }
 
 function ensureDeckFromPile(engine) {
@@ -144,6 +437,69 @@ function ensureDeckFromPile(engine) {
   engine.pile = pile;
 }
 
+function freshSingleDeck() {
+  const deck = [];
+  for (const suit of SUITS) {
+    for (const rank of RANKS) {
+      deck.push(makeCard(rank, suit));
+    }
+  }
+  return deck;
+}
+
+function buildBluffDeck(deckCount) {
+  const decks = Math.min(10, Math.max(1, Number(deckCount) || 1));
+  const out = [];
+  for (let i = 0; i < decks; i += 1) {
+    out.push(...freshSingleDeck());
+  }
+  return hardShuffle(out);
+}
+
+function buildDeckForConfig(config = {}) {
+  const gameMode = String(config.gameMode || 'leastsum').toLowerCase();
+  if (gameMode === 'bluff') {
+    return buildBluffDeck(config.bluffDeckCount);
+  }
+  return freshDoubleDeck();
+}
+
+function assertEnoughCardsToStart(activeCount, cardsPerPlayer, deckSize) {
+  const required = activeCount * cardsPerPlayer + 1;
+  if (deckSize >= required) return;
+  throw new ApiError(400, 'Not enough cards for current player/deck settings.');
+}
+
+function dealLeastSumHands(activeIds, deck, cardsPerPlayer) {
+  const hands = {};
+  activeIds.forEach((id) => {
+    hands[id] = deck.splice(0, cardsPerPlayer);
+  });
+  const previousCard = deck.shift() || null;
+  return { hands, previousCard };
+}
+
+function dealBluffHands(activeIds, deck) {
+  const hands = {};
+  activeIds.forEach((id) => {
+    hands[id] = [];
+  });
+  const aside = [];
+  if (!activeIds.length) return { hands, previousCard: null, aside };
+
+  const perPlayer = Math.floor(deck.length / activeIds.length);
+  for (let i = 0; i < perPlayer; i += 1) {
+    for (const playerId of activeIds) {
+      hands[playerId].push(deck.shift());
+    }
+  }
+  while (deck.length) {
+    aside.push(deck.shift());
+  }
+
+  return { hands, previousCard: null, aside };
+}
+
 export function createWaitingEngine({ roomCode, hostPlayerId, hostName, hostUid }) {
   const now = Date.now();
   return {
@@ -151,6 +507,7 @@ export function createWaitingEngine({ roomCode, hostPlayerId, hostName, hostUid 
     roomCode,
     status: 'waiting',
     timeoutStreak: 0,
+    timeoutCycleIds: [],
     hostPlayerId,
     config: { ...DEFAULT_CONFIG },
     players: {
@@ -161,6 +518,7 @@ export function createWaitingEngine({ roomCode, hostPlayerId, hostName, hostUid 
         order: 0,
         score: 0,
         eliminated: false,
+        bluffFinished: false,
         connected: true,
         lastSeenAt: now,
       },
@@ -177,6 +535,16 @@ export function createWaitingEngine({ roomCode, hostPlayerId, hostName, hostUid 
     pendingThrownCards: null,
     hands: {},
     roundResults: null,
+    roundHistory: [],
+    roundReveal: null,
+    bluffActiveClaim: null,
+    bluffLivePile: [],
+    bluffAsidePile: [],
+    bluffLiveTrail: [],
+    bluffClaimHistory: [],
+    bluffFinishOrder: [],
+    bluffPendingFinish: [],
+    bluffLastObjectionReveal: null,
     knocker: null,
     knockerFailed: false,
     jokerCard: null,
@@ -199,21 +567,27 @@ export function startGame(engine, actorPlayerId) {
     throw new ApiError(400, 'At least 2 players are required to start.');
   }
 
+  engine.config = sanitizeConfigPatch(engine.config || {}, DEFAULT_CONFIG);
+  const gameMode = String(engine.config?.gameMode || 'leastsum').toLowerCase();
   const cardsPerPlayer = Number(engine.config?.cardsPerPlayer || DEFAULT_CONFIG.cardsPerPlayer);
-  const deck = freshDoubleDeck();
-  const hands = {};
-
-  active.forEach(([id]) => {
-    hands[id] = deck.splice(0, cardsPerPlayer);
-  });
-
-  const previousCard = deck.shift() || null;
+  const deck = buildDeckForConfig(engine.config || {});
   const turnOrder = active.map(([id]) => id);
+  let hands = {};
+  let previousCard = null;
+  let bluffAsidePile = [];
+
+  if (gameMode === 'bluff') {
+    ({ hands, previousCard, aside: bluffAsidePile } = dealBluffHands(turnOrder, deck));
+  } else {
+    assertEnoughCardsToStart(active.length, cardsPerPlayer, deck.length);
+    ({ hands, previousCard } = dealLeastSumHands(turnOrder, deck, cardsPerPlayer));
+  }
+
   const firstTurnIdx = Math.floor(Math.random() * turnOrder.length);
   const dealerIdx = (firstTurnIdx - 1 + turnOrder.length) % turnOrder.length;
 
   engine.status = 'playing';
-  engine.phase = 'throw';
+  engine.phase = isBluffMode(engine) ? BLUFF_PHASE_PLAY : 'throw';
   engine.round = (engine.round || 0) + 1;
   engine.deck = deck;
   engine.previousCard = previousCard;
@@ -223,12 +597,27 @@ export function startGame(engine, actorPlayerId) {
   engine.knocker = null;
   engine.knockerFailed = false;
   engine.roundResults = null;
+  engine.roundHistory = [];
+  engine.roundReveal = null;
+  engine.bluffActiveClaim = null;
+  engine.bluffLivePile = [];
+  engine.bluffAsidePile = bluffAsidePile;
+  engine.bluffLiveTrail = [];
+  engine.bluffClaimHistory = [];
+  engine.bluffFinishOrder = [];
+  engine.bluffPendingFinish = [];
+  engine.bluffLastObjectionReveal = null;
   engine.dealerIdx = dealerIdx;
   engine.turnOrder = turnOrder;
   engine.currentTurnIdx = firstTurnIdx;
   engine.turnCount = 0;
-  engine.jokerCard = engine.config?.useJoker ? deck[Math.floor(Math.random() * deck.length)] ?? null : null;
-  engine.timeoutStreak = 0;
+  engine.jokerCard = engine.config?.gameMode === 'leastsum' && engine.config?.useJoker
+    ? deck[Math.floor(Math.random() * deck.length)] ?? null
+    : null;
+  resetTimeoutProgress(engine);
+  Object.values(engine.players || {}).forEach((player) => {
+    player.bluffFinished = false;
+  });
   resetTurnDeadline(engine);
 }
 
@@ -241,7 +630,8 @@ export function updateConfig(engine, actorPlayerId, patch) {
     throw new ApiError(403, 'Only host can update settings.');
   }
 
-  engine.config = sanitizeConfigPatch(patch, engine.config || DEFAULT_CONFIG);
+  const nextConfig = sanitizeConfigPatch(patch, engine.config || DEFAULT_CONFIG);
+  engine.config = nextConfig;
 }
 
 export function joinWaitingRoom(engine, { playerId, name, uid }) {
@@ -268,6 +658,7 @@ export function joinWaitingRoom(engine, { playerId, name, uid }) {
     order: Object.keys(players).length,
     score: 0,
     eliminated: false,
+    bluffFinished: false,
     connected: true,
     lastSeenAt: now,
   };
@@ -297,6 +688,7 @@ export function reclaimPlayer(engine, { playerId, uid, nameHint }) {
 export function throwCards(engine, actorPlayerId, indices) {
   assertRoomState(engine);
   assertStarted(engine);
+  assertLeastSumMode(engine);
   if (engine.status !== 'playing' || engine.phase !== 'throw') {
     throw new ApiError(400, 'Throw is not allowed now.');
   }
@@ -334,7 +726,7 @@ export function throwCards(engine, actorPlayerId, indices) {
   }
 
   engine.hands[actorPlayerId] = hand;
-  engine.timeoutStreak = 0;
+  resetTimeoutProgress(engine);
   resetTurnDeadline(engine);
 
   if (isMatch) {
@@ -356,6 +748,7 @@ export function throwCards(engine, actorPlayerId, indices) {
 export function pickCard(engine, actorPlayerId, source) {
   assertRoomState(engine);
   assertStarted(engine);
+  assertLeastSumMode(engine);
   if (engine.status !== 'playing' || engine.phase !== 'pick') {
     throw new ApiError(400, 'Pick is not allowed now.');
   }
@@ -399,6 +792,7 @@ export function pickCard(engine, actorPlayerId, source) {
 export function knock(engine, actorPlayerId) {
   assertRoomState(engine);
   assertStarted(engine);
+  assertLeastSumMode(engine);
 
   if (engine.status !== 'playing') {
     throw new ApiError(400, 'Knock is not allowed right now.');
@@ -447,9 +841,9 @@ export function knock(engine, actorPlayerId) {
     let penaltyApplied = false;
 
     if (id === actorPlayerId && !knockerFailed) {
-      addedScore = 0;
+      addedScore = knockerSum < 0 ? knockerSum : 0;
     } else if (id === actorPlayerId && knockerFailed) {
-      addedScore = knockerSum + penalty;
+      addedScore = penalty;
       penaltyApplied = true;
     }
 
@@ -477,11 +871,245 @@ export function knock(engine, actorPlayerId) {
 
   engine.players = updatedPlayers;
   engine.roundResults = roundResults;
+  appendRoundHistory(engine, roundResults);
+  engine.roundReveal = buildRoundRevealFromHands(engine);
   engine.knocker = actorPlayerId;
   engine.knockerFailed = knockerFailed;
   engine.status = survivors.length <= 1 ? 'gameover' : 'roundEnd';
   engine.turnDeadlineAt = null;
-  engine.timeoutStreak = 0;
+  resetTimeoutProgress(engine);
+  engine.bluffActiveClaim = null;
+  engine.bluffLivePile = [];
+  engine.bluffAsidePile = [];
+  engine.bluffLiveTrail = [];
+  engine.bluffClaimHistory = [];
+  engine.bluffFinishOrder = [];
+  engine.bluffPendingFinish = [];
+  engine.bluffLastObjectionReveal = null;
+}
+
+export function bluffPlaceClaim(engine, actorPlayerId, indices, declaredRankInput) {
+  assertRoomState(engine);
+  assertStarted(engine);
+  assertBluffMode(engine);
+  if (engine.status !== 'playing' || engine.phase !== BLUFF_PHASE_PLAY) {
+    throw new ApiError(400, 'Place Claim is not allowed now.');
+  }
+  ensureBluffCollections(engine);
+  ensureCurrentTurnInActiveOrder(engine);
+  assertPlayerTurn(engine, actorPlayerId);
+
+  const hand = [...(engine.hands?.[actorPlayerId] || [])];
+  if (!hand.length) {
+    throw new ApiError(400, 'Hand is empty.');
+  }
+
+  const picked = [...new Set((indices || []).filter((i) => Number.isInteger(i) && i >= 0 && i < hand.length))]
+    .sort((a, b) => b - a);
+  if (!picked.length) {
+    throw new ApiError(400, 'Select at least one card to play face down.');
+  }
+
+  const declaredRank = parseDeclaredRank(declaredRankInput);
+  const activeClaim = engine.bluffActiveClaim || null;
+  const lifecycleRank = activeClaim?.declaredRank || null;
+  if (lifecycleRank && declaredRank !== lifecycleRank) {
+    throw new ApiError(400, `Declared rank must stay ${lifecycleRank} for this claim chain.`);
+  }
+
+  const playedCards = [];
+  picked.forEach((idx) => {
+    playedCards.unshift(hand.splice(idx, 1)[0]);
+  });
+  const placedAt = Date.now();
+
+  engine.hands[actorPlayerId] = hand;
+  engine.bluffLivePile = [...engine.bluffLivePile, ...playedCards];
+  engine.bluffLiveTrail = [
+    ...(Array.isArray(engine.bluffLiveTrail) ? engine.bluffLiveTrail : []),
+    ...playedCards.map((card) => ({
+      rank: card?.rank,
+      suit: card?.suit,
+      byPlayerId: actorPlayerId,
+      declaredRank: lifecycleRank || declaredRank,
+      at: placedAt,
+    })),
+  ];
+  engine.bluffActiveClaim = {
+    claimerId: actorPlayerId,
+    declaredRank: lifecycleRank || declaredRank,
+    cards: playedCards.map((card) => ({ ...card })),
+    startedAt: placedAt,
+    passers: [],
+  };
+  appendPendingFinish(engine, actorPlayerId);
+  engine.bluffLastObjectionReveal = null;
+  pushBluffHistory(engine, {
+    type: 'claim',
+    byPlayerId: actorPlayerId,
+    declaredRank: lifecycleRank || declaredRank,
+    cardCount: playedCards.length,
+    cards: playedCards.map((card) => ({ rank: card?.rank, suit: card?.suit })),
+  });
+  resetTimeoutProgress(engine);
+  advanceTurnFromPlayer(engine, actorPlayerId);
+
+  return {
+    phase: BLUFF_PHASE_PLAY,
+    declaredRank: engine.bluffActiveClaim.declaredRank,
+    cardCount: playedCards.length,
+  };
+}
+
+export function bluffPass(engine, actorPlayerId) {
+  assertRoomState(engine);
+  assertStarted(engine);
+  assertBluffMode(engine);
+  if (engine.status !== 'playing' || engine.phase !== BLUFF_PHASE_PLAY) {
+    throw new ApiError(400, 'Pass is not allowed now.');
+  }
+  ensureBluffCollections(engine);
+  ensureCurrentTurnInActiveOrder(engine);
+  assertPlayerTurn(engine, actorPlayerId);
+
+  const claim = engine.bluffActiveClaim || null;
+  if (!claim || !claim.claimerId || !Array.isArray(claim.cards) || !claim.cards.length) {
+    throw new ApiError(400, 'No claim available to pass/challenge.');
+  }
+  if (claim.claimerId === actorPlayerId) {
+    throw new ApiError(400, 'Claimer cannot pass this claim.');
+  }
+
+  const passers = Array.isArray(claim.passers) ? [...claim.passers] : [];
+  if (passers.includes(actorPlayerId)) {
+    throw new ApiError(400, 'You already passed on this claim.');
+  }
+  passers.push(actorPlayerId);
+  engine.bluffActiveClaim = { ...claim, passers };
+  pushBluffHistory(engine, {
+    type: 'pass',
+    byPlayerId: actorPlayerId,
+    claimerId: claim.claimerId,
+    declaredRank: claim.declaredRank,
+    passCount: passers.length,
+    cardCount: Array.isArray(claim.cards) ? claim.cards.length : 0,
+  });
+
+  const activeIds = activeBluffIds(engine);
+  const others = activeIds.filter((id) => id !== claim.claimerId);
+  const allOthersPassed = others.every((id) => passers.includes(id));
+
+  if (allOthersPassed) {
+    pushBluffHistory(engine, {
+      type: 'close',
+      byPlayerId: claim.claimerId,
+      declaredRank: claim.declaredRank,
+      cardCount: Array.isArray(engine.bluffLivePile) ? engine.bluffLivePile.length : 0,
+    });
+    engine.bluffAsidePile = [...engine.bluffAsidePile, ...engine.bluffLivePile];
+    engine.bluffLivePile = [];
+    engine.bluffLiveTrail = [];
+    engine.bluffActiveClaim = null;
+    finalizeBluffPendingPlayers(engine);
+    if (checkBluffGameOver(engine)) {
+      resetTimeoutProgress(engine);
+      return { resolved: 'gameover' };
+    }
+
+    if (isBluffActivePlayer(engine, claim.claimerId)) {
+      engine.currentTurnIdx = resolveCurrentTurnOrderIndex(engine, claim.claimerId);
+      engine.turnCount = (engine.turnCount ?? 0) + 1;
+      engine.phase = BLUFF_PHASE_PLAY;
+      resetTurnDeadline(engine);
+    } else {
+      advanceTurnFromPlayer(engine, claim.claimerId);
+    }
+  } else {
+    advanceTurnFromPlayer(engine, actorPlayerId);
+  }
+
+  resetTimeoutProgress(engine);
+  return { resolved: allOthersPassed ? 'closed' : 'passed', phase: BLUFF_PHASE_PLAY };
+}
+
+export function bluffObjection(engine, actorPlayerId) {
+  assertRoomState(engine);
+  assertStarted(engine);
+  assertBluffMode(engine);
+  if (engine.status !== 'playing' || engine.phase !== BLUFF_PHASE_PLAY) {
+    throw new ApiError(400, 'Objection is not allowed now.');
+  }
+  ensureBluffCollections(engine);
+  ensureCurrentTurnInActiveOrder(engine);
+  assertPlayerTurn(engine, actorPlayerId);
+
+  const claim = engine.bluffActiveClaim || null;
+  if (!claim || !Array.isArray(claim.cards) || !claim.cards.length) {
+    throw new ApiError(400, 'No claim available to challenge.');
+  }
+  if (claim.claimerId === actorPlayerId) {
+    throw new ApiError(400, 'Claimer cannot object own claim.');
+  }
+
+  const truthful = claim.cards.every((card) => card?.rank === claim.declaredRank);
+  const loserId = truthful ? actorPlayerId : claim.claimerId;
+
+  const pile = [...engine.bluffLivePile];
+  const liveTrail = Array.isArray(engine.bluffLiveTrail) ? [...engine.bluffLiveTrail] : [];
+  const loserHand = Array.isArray(engine.hands?.[loserId]) ? [...engine.hands[loserId]] : [];
+  loserHand.push(...pile);
+  engine.hands[loserId] = loserHand;
+  engine.bluffLivePile = [];
+  engine.bluffLiveTrail = [];
+
+  engine.bluffLastObjectionReveal = {
+    declaredRank: claim.declaredRank,
+    cards: claim.cards.map((card) => ({ ...card })),
+    claimerId: claim.claimerId,
+    objectorId: actorPlayerId,
+    truthful,
+    loserId,
+    at: Date.now(),
+  };
+  pushBluffHistory(engine, {
+    type: 'objection',
+    byPlayerId: actorPlayerId,
+    claimerId: claim.claimerId,
+    declaredRank: claim.declaredRank,
+    truthful,
+    loserId,
+    cardCount: pile.length,
+    cards: liveTrail.map((card) => ({ rank: card?.rank, suit: card?.suit })),
+  });
+  engine.bluffActiveClaim = null;
+  finalizeBluffPendingPlayers(engine);
+  if (checkBluffGameOver(engine)) {
+    resetTimeoutProgress(engine);
+    return { resolved: 'gameover', truthful, loserId };
+  }
+
+  if (truthful) {
+    advanceTurnFromPlayer(engine, actorPlayerId);
+  } else if (isBluffActivePlayer(engine, actorPlayerId)) {
+    engine.currentTurnIdx = resolveCurrentTurnOrderIndex(engine, actorPlayerId);
+    engine.turnCount = (engine.turnCount ?? 0) + 1;
+    engine.phase = BLUFF_PHASE_PLAY;
+    resetTurnDeadline(engine);
+  } else {
+    advanceTurnFromPlayer(engine, actorPlayerId);
+  }
+
+  resetTimeoutProgress(engine);
+  return { resolved: 'objection', truthful, loserId, phase: BLUFF_PHASE_PLAY };
+}
+
+// Backward aliases for existing clients.
+export function bluffPlay(engine, actorPlayerId, indices, declaredRankInput) {
+  return bluffPlaceClaim(engine, actorPlayerId, indices, declaredRankInput);
+}
+
+export function bluffChallenge(engine, actorPlayerId) {
+  return bluffObjection(engine, actorPlayerId);
 }
 
 function resolveLeaveCurrentPick(engine, leavingId) {
@@ -536,6 +1164,42 @@ export function leaveRoom(engine, actorPlayerId) {
     engine.roundResults = nextResults;
   }
 
+  if (engine.roundReveal?.handsByPlayer?.[actorPlayerId]) {
+    const nextRevealHands = { ...(engine.roundReveal.handsByPlayer || {}) };
+    delete nextRevealHands[actorPlayerId];
+    engine.roundReveal = {
+      ...engine.roundReveal,
+      handsByPlayer: nextRevealHands,
+    };
+  }
+
+  if (isBluffMode(engine)) {
+    ensureBluffCollections(engine);
+    engine.bluffFinishOrder = engine.bluffFinishOrder.filter((id) => id !== actorPlayerId);
+    engine.bluffPendingFinish = engine.bluffPendingFinish.filter((id) => id !== actorPlayerId);
+    if (engine.bluffActiveClaim?.claimerId === actorPlayerId) {
+      pushBluffHistory(engine, {
+        type: 'claim_cancelled_leave',
+        byPlayerId: actorPlayerId,
+        cardCount: Array.isArray(engine.bluffLivePile) ? engine.bluffLivePile.length : 0,
+      });
+      engine.bluffAsidePile = [...engine.bluffAsidePile, ...engine.bluffLivePile];
+      engine.bluffLivePile = [];
+      engine.bluffLiveTrail = [];
+      engine.bluffActiveClaim = null;
+    } else if (engine.bluffActiveClaim?.passers?.length) {
+      engine.bluffActiveClaim = {
+        ...engine.bluffActiveClaim,
+        passers: engine.bluffActiveClaim.passers.filter((id) => id !== actorPlayerId),
+      };
+    }
+    if (engine.status === 'playing') {
+      finalizeBluffPendingPlayers(engine);
+      checkBluffGameOver(engine);
+      engine.phase = BLUFF_PHASE_PLAY;
+    }
+  }
+
   if (!Object.keys(players).length) {
     return { deleteRoom: true };
   }
@@ -562,21 +1226,27 @@ export function leaveRoom(engine, actorPlayerId) {
   if (engine.status === 'playing') {
     const activeIds = activeTurnOrder(engine);
     if (activeIds.length <= 1) {
+      if (isBluffMode(engine) && activeIds.length === 1) {
+        addToBluffFinishOrder(engine, activeIds[0]);
+      }
       engine.status = 'gameover';
       engine.turnDeadlineAt = null;
     } else {
-      engine.phase = 'throw';
+      engine.phase = isBluffMode(engine) ? BLUFF_PHASE_PLAY : 'throw';
       engine.pendingThrownCards = null;
       resetTurnDeadline(engine);
     }
   }
 
-  engine.timeoutStreak = 0;
+  resetTimeoutProgress(engine);
   return { deleteRoom: false };
 }
 
 export function nextRound(engine) {
   assertRoomState(engine);
+  if (isBluffMode(engine)) {
+    throw new ApiError(400, 'Next round is not used in bluff mode.');
+  }
   if (engine.status !== 'roundEnd') {
     throw new ApiError(400, 'Round transition is not available.');
   }
@@ -588,21 +1258,20 @@ export function nextRound(engine) {
     return;
   }
 
+  engine.config = sanitizeConfigPatch(engine.config || {}, DEFAULT_CONFIG);
   const cardsPerPlayer = Number(engine.config?.cardsPerPlayer || DEFAULT_CONFIG.cardsPerPlayer);
-  const deck = freshDoubleDeck();
-  const hands = {};
-
-  active.forEach(([id]) => {
-    hands[id] = deck.splice(0, cardsPerPlayer);
-  });
-
-  const previousCard = deck.shift() || null;
+  const deck = buildDeckForConfig(engine.config || {});
   const turnOrder = active.map(([id]) => id);
+  let hands = {};
+  let previousCard = null;
+  assertEnoughCardsToStart(active.length, cardsPerPlayer, deck.length);
+  ({ hands, previousCard } = dealLeastSumHands(turnOrder, deck, cardsPerPlayer));
+
   const dealerIdx = ((Number(engine.dealerIdx ?? 0) + 1) % turnOrder.length + turnOrder.length) % turnOrder.length;
   const firstTurnIdx = (dealerIdx + 1) % turnOrder.length;
 
   engine.status = 'playing';
-  engine.phase = 'throw';
+  engine.phase = isBluffMode(engine) ? BLUFF_PHASE_PLAY : 'throw';
   engine.round = (engine.round || 0) + 1;
   engine.deck = deck;
   engine.previousCard = previousCard;
@@ -612,12 +1281,23 @@ export function nextRound(engine) {
   engine.knocker = null;
   engine.knockerFailed = false;
   engine.roundResults = null;
+  engine.roundReveal = null;
+  engine.bluffActiveClaim = null;
+  engine.bluffLivePile = [];
+  engine.bluffAsidePile = [];
+  engine.bluffLiveTrail = [];
+  engine.bluffClaimHistory = [];
+  engine.bluffFinishOrder = [];
+  engine.bluffPendingFinish = [];
+  engine.bluffLastObjectionReveal = null;
   engine.dealerIdx = dealerIdx;
   engine.turnOrder = turnOrder;
   engine.currentTurnIdx = firstTurnIdx;
   engine.turnCount = 0;
-  engine.jokerCard = engine.config?.useJoker ? deck[Math.floor(Math.random() * deck.length)] ?? null : null;
-  engine.timeoutStreak = 0;
+  engine.jokerCard = engine.config?.gameMode === 'leastsum' && engine.config?.useJoker
+    ? deck[Math.floor(Math.random() * deck.length)] ?? null
+    : null;
+  resetTimeoutProgress(engine);
   resetTurnDeadline(engine);
 }
 
@@ -633,6 +1313,7 @@ export function playAgain(engine) {
       ...players[id],
       score: 0,
       eliminated: false,
+      bluffFinished: false,
     };
   });
 
@@ -652,8 +1333,18 @@ export function playAgain(engine) {
   engine.knocker = null;
   engine.knockerFailed = false;
   engine.roundResults = null;
+  engine.roundHistory = [];
+  engine.roundReveal = null;
+  engine.bluffActiveClaim = null;
+  engine.bluffLivePile = [];
+  engine.bluffAsidePile = [];
+  engine.bluffLiveTrail = [];
+  engine.bluffClaimHistory = [];
+  engine.bluffFinishOrder = [];
+  engine.bluffPendingFinish = [];
+  engine.bluffLastObjectionReveal = null;
   engine.jokerCard = null;
-  engine.timeoutStreak = 0;
+  resetTimeoutProgress(engine);
   engine.turnDeadlineAt = null;
 }
 
@@ -699,6 +1390,21 @@ function applyTimeoutThrowFlow(engine, turnId) {
   engine.deck = deck;
   engine.pile = pile;
   nextTurn(engine);
+}
+
+function applyTimeoutBluffFlow(engine, turnId) {
+  ensureBluffCollections(engine);
+  if (engine.bluffActiveClaim) {
+    if (engine.bluffActiveClaim.claimerId === turnId) {
+      advanceTurnFromPlayer(engine, turnId);
+      return;
+    }
+    // Active claim timeout becomes auto-pass.
+    bluffPass(engine, turnId);
+    return;
+  }
+  // No active claim timeout simply skips turn.
+  advanceTurnFromPlayer(engine, turnId);
 }
 
 function applyTimeoutPickFlow(engine, turnId) {
@@ -765,25 +1471,35 @@ export function timeoutTick(engine, actorPlayerId) {
 
   const activeIds = activeTurnOrder(engine);
   if (activeIds.length < 2) {
+    if (isBluffMode(engine) && activeIds.length === 1) {
+      addToBluffFinishOrder(engine, activeIds[0]);
+    }
     engine.status = 'gameover';
     engine.turnDeadlineAt = null;
     return { applied: true, ended: 'gameover' };
   }
 
-  const priorTimeoutStreak = Number(engine.timeoutStreak || 0);
+  const priorTimeoutCycle = Array.isArray(engine.timeoutCycleIds)
+    ? engine.timeoutCycleIds.filter((id) => activeIds.includes(id))
+    : [];
 
   const turnId = currentTurnId(engine);
   if (!turnId) {
-    nextTurn(engine);
+    nextTurn(engine, isBluffMode(engine) ? BLUFF_PHASE_PLAY : 'throw');
+  } else if (isBluffMode(engine)) {
+    applyTimeoutBluffFlow(engine, turnId);
   } else if (engine.phase === 'pick') {
     applyTimeoutPickFlow(engine, turnId);
   } else {
     applyTimeoutThrowFlow(engine, turnId);
   }
 
-  engine.timeoutStreak = priorTimeoutStreak + 1;
+  const cycleSet = new Set(priorTimeoutCycle);
+  if (turnId) cycleSet.add(turnId);
+  engine.timeoutCycleIds = [...cycleSet];
+  engine.timeoutStreak = engine.timeoutCycleIds.length;
 
-  if (engine.timeoutStreak >= activeIds.length) {
+  if (activeIds.every((id) => cycleSet.has(id))) {
     return { applied: true, deleteRoom: true };
   }
 
@@ -820,6 +1536,7 @@ export function buildPublicProjection(engine) {
       order: player?.order ?? 0,
       score: player?.score ?? 0,
       eliminated: !!player?.eliminated,
+      bluffFinished: !!player?.bluffFinished,
       connected: player?.connected !== false,
       lastSeenAt: Number(player?.lastSeenAt || 0),
     };
@@ -829,6 +1546,19 @@ export function buildPublicProjection(engine) {
 
   const pile = Array.isArray(engine.pile) ? engine.pile : [];
   const deck = Array.isArray(engine.deck) ? engine.deck : [];
+  const bluffClaim = engine.bluffActiveClaim || null;
+  const bluffReveal = engine.bluffLastObjectionReveal || null;
+  const bluffLiveRiskPublic = buildBluffLiveRiskPublic(engine);
+  const bluffChainHistoryPublic = buildBluffChainHistoryPublic(engine);
+  const bluffClaimPublic = bluffClaim
+    ? {
+        claimerId: bluffClaim.claimerId,
+        declaredRank: bluffClaim.declaredRank,
+        cardCount: Array.isArray(bluffClaim.cards) ? bluffClaim.cards.length : 0,
+        passCount: Array.isArray(bluffClaim.passers) ? bluffClaim.passers.length : 0,
+        startedAt: Number(bluffClaim.startedAt || 0),
+      }
+    : null;
 
   return {
     version: GAME_VERSION,
@@ -850,10 +1580,43 @@ export function buildPublicProjection(engine) {
     pileTop: pile[pile.length - 1] || null,
     previousCard: engine.previousCard || null,
     pendingThrownCount: Array.isArray(engine.pendingThrownCards) ? engine.pendingThrownCards.length : 0,
+    bluffActiveClaimPublic: bluffClaimPublic,
+    bluffLivePileCount: bluffLiveRiskPublic.totalCards,
+    bluffAsideCount: Array.isArray(engine.bluffAsidePile) ? engine.bluffAsidePile.length : 0,
+    bluffLiveRiskPublic,
+    bluffChainHistoryPublic,
+    // Compatibility placeholders for older clients.
+    bluffLivePileCards: [],
+    bluffClaimHistory: [],
+    bluffFinishOrder: Array.isArray(engine.bluffFinishOrder) ? engine.bluffFinishOrder : [],
+    bluffLastObjectionReveal: bluffReveal,
+    // Compatibility fields for pre-v1 bluff UI consumers.
+    bluffDeclaredRank: bluffClaimPublic?.declaredRank || null,
+    bluffLastClaim: bluffClaimPublic
+      ? {
+          claimerId: bluffClaimPublic.claimerId,
+          declaredRank: bluffClaimPublic.declaredRank,
+          cardCount: bluffClaimPublic.cardCount,
+          at: bluffClaimPublic.startedAt,
+        }
+      : null,
+    bluffLastReveal: bluffReveal
+      ? {
+          declaredRank: bluffReveal.declaredRank,
+          cards: bluffReveal.cards,
+          claimerId: bluffReveal.claimerId,
+          challengerId: bluffReveal.objectorId,
+          truthful: bluffReveal.truthful,
+          loserId: bluffReveal.loserId,
+          at: bluffReveal.at,
+        }
+      : null,
     jokerCard: engine.jokerCard || null,
     knocker: engine.knocker || null,
     knockerFailed: !!engine.knockerFailed,
     roundResults: engine.roundResults || null,
+    roundHistory: Array.isArray(engine.roundHistory) ? engine.roundHistory : [],
+    roundReveal: ['roundEnd', 'gameover'].includes(engine.status) ? (engine.roundReveal || null) : null,
     turnDeadlineAt: engine.turnDeadlineAt || null,
     updatedAt: Date.now(),
   };

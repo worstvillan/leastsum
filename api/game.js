@@ -1,5 +1,10 @@
 import { assertRoomCode, requireAuthContext, requireRoomMember } from '../server/lib/auth.js';
 import {
+  bluffChallengeService,
+  bluffObjectionService,
+  bluffPassService,
+  bluffPlaceClaimService,
+  bluffPlayService,
   createRoomService,
   joinRoomService,
   knockService,
@@ -77,7 +82,7 @@ export default async function handler(req, res) {
 
     switch (action) {
       case 'create': {
-        return createRoomService(auth.uid, payload.name);
+        return createRoomService(auth.uid, payload.name, payload.config || null);
       }
 
       case 'join': {
@@ -104,6 +109,29 @@ export default async function handler(req, res) {
         const { roomCode, memberPlayerId } = await requireMemberActionContext(payload, auth);
         const indices = Array.isArray(payload.indices) ? payload.indices : [];
         return throwService(roomCode, memberPlayerId, indices);
+      }
+
+      case 'bluffPlaceClaim':
+      case 'bluffPlay': {
+        const { roomCode, memberPlayerId } = await requireMemberActionContext(payload, auth);
+        const indices = Array.isArray(payload.indices) ? payload.indices : [];
+        const declaredRank = String(payload.declaredRank || '');
+        return action === 'bluffPlay'
+          ? bluffPlayService(roomCode, memberPlayerId, indices, declaredRank)
+          : bluffPlaceClaimService(roomCode, memberPlayerId, indices, declaredRank);
+      }
+
+      case 'bluffPass': {
+        const { roomCode, memberPlayerId } = await requireMemberActionContext(payload, auth);
+        return bluffPassService(roomCode, memberPlayerId);
+      }
+
+      case 'bluffObjection':
+      case 'bluffChallenge': {
+        const { roomCode, memberPlayerId } = await requireMemberActionContext(payload, auth);
+        return action === 'bluffChallenge'
+          ? bluffChallengeService(roomCode, memberPlayerId)
+          : bluffObjectionService(roomCode, memberPlayerId);
       }
 
       case 'pick': {
