@@ -169,13 +169,37 @@ export function Lobby({ onCreateRoom, onJoinRoom, error, clearError, loading }) 
 // ══════════════════════════════════════════════════════════════
 // WAITING ROOM
 // ══════════════════════════════════════════════════════════════
-export function WaitingRoom({ roomCode, isHost, gameState, myId, onUpdateConfig, onStartGame, onLeave }) {
+export function WaitingRoom({
+  roomCode,
+  isHost,
+  gameState,
+  myId,
+  onUpdateConfig,
+  onStartGame,
+  onKickPlayer,
+  onLeave,
+}) {
   const [showConfig, setShowConfig] = useState(false);
+  const [kickingPlayerId, setKickingPlayerId] = useState('');
+  const [kickError, setKickError] = useState('');
   const cfg     = { ...CONFIG_DEFAULTS, ...(gameState?.config ?? {}) };
   const players = Object.entries(gameState?.players ?? {}).sort((a, b) => a[1].order - b[1].order);
   const hostPlayerId = gameState?.hostPlayerId ?? players[0]?.[0] ?? null;
 
   const upd = (key, val) => onUpdateConfig({ ...cfg, [key]: val });
+
+  const onKickAttempt = async (targetPlayerId, playerName) => {
+    if (!isHost || !onKickPlayer || !targetPlayerId || targetPlayerId === myId) return;
+    if (!window.confirm(`Kick ${playerName} from lobby?`)) return;
+
+    setKickingPlayerId(targetPlayerId);
+    setKickError('');
+    const result = await onKickPlayer(targetPlayerId);
+    if (!result?.ok) {
+      setKickError(result?.message || result?.error || 'Unable to kick player.');
+    }
+    setKickingPlayerId('');
+  };
 
   return (
     <div className="relative flex flex-col items-center justify-center h-full w-full px-4 z-20 overflow-y-auto py-6">
@@ -306,6 +330,11 @@ export function WaitingRoom({ roomCode, isHost, gameState, myId, onUpdateConfig,
 
         {/* Player list */}
         <div className="flex flex-col gap-2.5 mb-5">
+          {kickError && (
+            <div className="px-3 py-2 bg-red-500/20 border border-red-300/45 rounded-xl text-red-100 text-[10px] font-black uppercase tracking-wider">
+              {kickError}
+            </div>
+          )}
           {players.map(([id, p]) => (
             <div key={id}
               className="flex items-center gap-3 bg-white/8 border border-white/15 rounded-xl p-3"
@@ -323,6 +352,19 @@ export function WaitingRoom({ roomCode, isHost, gameState, myId, onUpdateConfig,
                 )}
                 {id === hostPlayerId && (
                   <span className="text-[9px] bg-yellow-400 px-2 py-0.5 rounded-full font-black text-black uppercase">Host</span>
+                )}
+                {isHost && id !== myId && (
+                  <button
+                    onClick={() => onKickAttempt(id, p?.name || 'Player')}
+                    disabled={kickingPlayerId === id}
+                    className={`text-[9px] px-2 py-0.5 rounded-full font-black uppercase transition-all ${
+                      kickingPlayerId === id
+                        ? 'bg-white/10 text-white/35 cursor-not-allowed'
+                        : 'bg-red-500/80 text-white hover:brightness-110'
+                    }`}
+                  >
+                    {kickingPlayerId === id ? 'Kicking...' : 'Kick'}
+                  </button>
                 )}
               </div>
             </div>

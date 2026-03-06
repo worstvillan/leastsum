@@ -861,8 +861,16 @@ export function knock(engine, actorPlayerId) {
   assertPlayerTurn(engine, actorPlayerId);
 
   const minTurnsToKnock = Number(engine.config?.minTurnsToKnock ?? DEFAULT_CONFIG.minTurnsToKnock);
-  if ((engine.turnCount ?? 0) < minTurnsToKnock) {
-    throw new ApiError(400, 'Knock is not allowed yet.');
+  const activeCount = Math.max(1, activeTurnOrder(engine).length);
+  const requiredTurns = Math.max(minTurnsToKnock, activeCount * 2);
+  const currentTurns = Number(engine.turnCount ?? 0);
+  if (currentTurns < requiredTurns) {
+    throw new ApiError(400, 'Knock is not allowed yet.', {
+      reason: 'KNOCK_MIN_TURNS',
+      currentTurns,
+      requiredTurns,
+      activePlayers: activeCount,
+    });
   }
 
   const myCards = engine.hands?.[actorPlayerId] || [];
@@ -1358,6 +1366,25 @@ export function leaveRoom(engine, actorPlayerId) {
   touchWaitingActivity(engine);
   resetTimeoutProgress(engine);
   return { deleteRoom: false };
+}
+
+export function kickPlayerFromWaiting(engine, actorPlayerId, targetPlayerId) {
+  assertRoomState(engine);
+
+  if (engine.status !== 'waiting') {
+    throw new ApiError(400, 'Kick is available only in waiting room.');
+  }
+  if (engine.hostPlayerId !== actorPlayerId) {
+    throw new ApiError(403, 'Only host can kick players in waiting room.');
+  }
+  if (!targetPlayerId || !engine.players?.[targetPlayerId]) {
+    throw new ApiError(404, 'Player not found in room.');
+  }
+  if (targetPlayerId === actorPlayerId) {
+    throw new ApiError(400, 'Host cannot kick self. Use leave instead.');
+  }
+
+  return leaveRoom(engine, targetPlayerId);
 }
 
 export function nextRound(engine) {

@@ -6,6 +6,7 @@ import {
   bluffPlaceClaimService,
   bluffPlayService,
   createRoomService,
+  kickPlayerService,
   joinRoomService,
   knockService,
   leaveService,
@@ -166,6 +167,15 @@ export default async function handler(req, res) {
       case 'playAgain': {
         const { roomCode, memberPlayerId } = await requireMemberActionContext(payload, auth);
         return playAgainService(roomCode, memberPlayerId);
+      }
+
+      case 'kickPlayer': {
+        const { roomCode, memberPlayerId } = await requireMemberActionContext(payload, auth);
+        const targetPlayerId = String(payload.targetPlayerId || '').trim();
+        if (!targetPlayerId) {
+          throw new ApiError(400, 'Target player is required.');
+        }
+        return kickPlayerService(roomCode, memberPlayerId, targetPlayerId);
       }
 
       default:

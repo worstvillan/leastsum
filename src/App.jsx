@@ -43,6 +43,7 @@ export default function App() {
           myId={game.myId}
           onUpdateConfig={game.updateConfig}
           onStartGame={game.startGame}
+          onKickPlayer={game.kickPlayer}
           onLeave={game.leaveRoom}
         />
       </div>

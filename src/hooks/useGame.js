@@ -175,6 +175,11 @@ const SAFE_ERROR_MESSAGES = new Set([
   'Too many join attempts. Please wait a minute and try again.',
   'Too many restore attempts. Please wait a minute and try again.',
   'Room expired due to inactivity. Create or join a new room.',
+  'Kick is available only in waiting room.',
+  'Only host can kick players in waiting room.',
+  'Player not found in room.',
+  'Host cannot kick self. Use leave instead.',
+  'Target player is required.',
 ]);
 
 const INTERNAL_ERROR_PATTERNS = [
@@ -667,6 +672,24 @@ export function useGame() {
     }
   };
 
+  const kickPlayer = async (targetPlayerId) => {
+    const roomCode = roomCodeRef.current;
+    if (!roomCode || !targetPlayerId) return { ok: false, message: 'Invalid player.' };
+    try {
+      await gameApiPost('kickPlayer', {
+        roomCode,
+        targetPlayerId,
+      });
+      return { ok: true };
+    } catch (err) {
+      return {
+        ok: false,
+        ...(err?.payload || {}),
+        message: toUiError(err, 'Unable to kick player.'),
+      };
+    }
+  };
+
   const drawFromDeck = async () => pickFromDeck();
   const takeDiscard = async () => pickFromPrevious();
   const swapCards = throwSelected;
@@ -723,6 +746,7 @@ export function useGame() {
     updateConfig,
     leaveRoom,
     startGame,
+    kickPlayer,
     nextRound,
     playAgain,
     throwSelected,

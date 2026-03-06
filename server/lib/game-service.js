@@ -6,6 +6,7 @@ import {
   createWaitingEngine,
   isWaitingRoomExpired,
   joinWaitingRoom,
+  kickPlayerFromWaiting,
   knock,
   leaveRoom,
   makePlayerId,
@@ -477,4 +478,35 @@ export async function playAgainService(roomCode, actorPlayerId) {
     return { ok: true };
   });
   return { ok: true };
+}
+
+export async function kickPlayerService(roomCode, actorPlayerId, targetPlayerId) {
+  await assertSecureRoomExists(roomCode, { enforceWaitingTtl: true });
+  const mutation = await runEngineMutation(
+    roomCode,
+    (engine) => {
+      markPlayerConnected(engine, actorPlayerId, true);
+      const result = kickPlayerFromWaiting(engine, actorPlayerId, targetPlayerId);
+      return { ...(result || {}), kickedPlayerId: targetPlayerId };
+    },
+    (meta, engine) => {
+      const nextMembers = { ...(meta.members || {}) };
+
+      Object.entries(nextMembers).forEach(([memberUid, playerId]) => {
+        if (playerId === targetPlayerId || !engine.players?.[playerId]) {
+          delete nextMembers[memberUid];
+        }
+      });
+
+      meta.members = nextMembers;
+      meta.hostPlayerId = engine.hostPlayerId || null;
+      return meta;
+    },
+  );
+
+  return {
+    ok: true,
+    roomDeleted: mutation.roomDeleted,
+    kickedPlayerId: targetPlayerId,
+  };
 }

@@ -317,7 +317,7 @@ function getOppSlots(n) {
   if (n === 1) return [east];
   if (n === 2) return [east, west];
   if (n === 3) return [east, north, west];
-  if (n === 4) return [east, northEast, north, west];
+  if (n === 4) return [east, northEast, northWest, west];
   if (n === 5) return [east, northEast, north, northWest, west];
   if (n === 6) return [east, northEast, north, northWest, west, southWest];
   return [east, northEast, north, northWest, west, southWest, southEast].slice(0, n);
@@ -461,8 +461,12 @@ export default function GameArena({ gameState, myId, roomCode = '', actions, voi
   const activeBluffClaim   = bluffActiveClaimPublic || bluffLastClaim || null;
   const activeBluffRank    = activeBluffClaim?.declaredRank || bluffDeclaredRank || null;
   const bluffReveal        = bluffLastObjectionReveal || bluffLastReveal || null;
-  const myTurnCount        = gameState?.turnCount ?? 0;
-  const canKnock           = myTurnCount >= (config.minTurnsToKnock ?? 1);
+  const myTurnCount        = Number(gameState?.turnCount ?? 0);
+  const knockMinTurns      = Math.max(
+    Number(config.minTurnsToKnock ?? 1),
+    Math.max(1, effectiveTurnOrder.length) * 2,
+  );
+  const canKnock           = myTurnCount >= knockMinTurns;
   const myCardCount        = Array.isArray(myCards) ? myCards.length : 0;
   const myRoundSum         = handSum(myCards, jokerCard);
   const turnDeadlineAt     = Number(gameState?.turnDeadlineAt || 0);
@@ -935,6 +939,13 @@ export default function GameArena({ gameState, myId, roomCode = '', actions, voi
     }
     if (result?.reason === 'KNOCK_SUM_LIMIT') {
       setActionWarning(`Knock allowed only below 25 (your sum: ${result.sum}).`);
+      vibrate([18, 12, 18]);
+      return;
+    }
+    if (result?.reason === 'KNOCK_MIN_TURNS') {
+      const currentTurns = Number(result?.currentTurns ?? myTurnCount);
+      const requiredTurns = Number(result?.requiredTurns ?? knockMinTurns);
+      setActionWarning(`Knock unlocks after ${requiredTurns} turns (now ${currentTurns}).`);
       vibrate([18, 12, 18]);
       return;
     }
