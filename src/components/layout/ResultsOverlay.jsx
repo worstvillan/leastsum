@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { isJokerMatch } from '../../utils/gameUtils';
+import { avatarColor, isJokerMatch } from '../../utils/gameUtils';
 
 function cardTone(card, jokerCard) {
   if (isJokerMatch(card, jokerCard)) return { fg: '#34171a', bg: 'linear-gradient(180deg,#ffd788,#ffb463)', label: 'Joker' };
@@ -55,6 +55,30 @@ function RankChip({ index, isWinner }) {
   return <span className={isWinner ? 'chip-host' : 'chip-score'}>{label}</span>;
 }
 
+function PodiumTile({ label, playerName, value, accent = 'var(--gold)', isYou = false }) {
+  return (
+    <div className="surface-glass rounded-[24px] p-4">
+      <div className="label-micro">{label}</div>
+      <div className="mt-3 flex items-center gap-3">
+        <div
+          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[16px] border border-white/18 text-base font-black text-white shadow-[0_12px_22px_rgba(23,8,19,0.18)]"
+          style={{ backgroundColor: avatarColor(playerName || 'P') }}
+        >
+          {(playerName || 'P')[0]?.toUpperCase?.() || 'P'}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-base font-semibold text-[var(--bg-cloud)]">
+            {playerName} {isYou ? <span className="text-[var(--mint)]">(You)</span> : null}
+          </div>
+          <div className="headline-display mt-1 text-3xl" style={{ color: accent }}>
+            {value}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function ResultsOverlay({ gameState, myId, actions }) {
   const isGameOver = gameState.status === 'gameover';
   const isBluffMode = String(gameState?.config?.gameMode || 'leastsum').toLowerCase() === 'bluff';
@@ -66,7 +90,6 @@ export default function ResultsOverlay({ gameState, myId, actions }) {
   const previousHistory = [...roundHistory].slice(0, -1).reverse();
 
   const title = isGameOver ? 'Final Results' : `Round ${gameState.round ?? 1} Complete`;
-  const subtitle = isBluffMode ? 'Final order.' : 'Scores.';
 
   if (isBluffMode) {
     const finishOrder = Array.isArray(gameState?.bluffFinishOrder) ? gameState.bluffFinishOrder : [];
@@ -74,6 +97,8 @@ export default function ResultsOverlay({ gameState, myId, actions }) {
     Object.keys(players).forEach((playerId) => {
       if (!rankedIds.includes(playerId)) rankedIds.push(playerId);
     });
+    const podium = rankedIds.slice(0, 3);
+    const tableOrder = rankedIds.slice(3);
 
     return (
       <div className="absolute inset-0 z-[100] flex items-center justify-center overflow-hidden bg-[rgba(30,9,21,0.72)] p-4 backdrop-blur-xl">
@@ -86,30 +111,50 @@ export default function ResultsOverlay({ gameState, myId, actions }) {
             <div>
               <div className="label-micro">Bluff Summary</div>
               <h2 className="headline-display mt-2 text-4xl text-[var(--bg-cloud)]">{title}</h2>
-              <p className="mt-2 max-w-xl text-sm text-white/62">{subtitle}</p>
             </div>
             <div className="chip-host">Bluff Mode</div>
           </div>
 
-          <div className="flex-1 space-y-3 overflow-y-auto pr-1">
-            {rankedIds.map((playerId, idx) => {
-              const player = players[playerId] || {};
-              const handCount = Number(gameState?.handCounts?.[playerId] ?? gameState?.hands?.[playerId]?.length ?? 0);
-              return (
-                <div key={`bluff-rank-${playerId}`} className="surface-glass flex items-center justify-between gap-3 rounded-[24px] p-4">
-                  <div className="flex items-center gap-3">
-                    <RankChip index={idx} isWinner={idx === 0} />
-                    <div>
-                      <div className="text-base font-semibold text-[var(--bg-cloud)]">
-                        {player?.name || 'Player'} {playerId === myId ? <span className="text-[var(--mint)]">(You)</span> : null}
+          <div className="grid flex-1 gap-4 overflow-hidden lg:grid-cols-[0.96fr_1.04fr]">
+            <div className="space-y-3">
+              {podium.map((playerId, idx) => {
+                const player = players[playerId] || {};
+                const handCount = Number(gameState?.handCounts?.[playerId] ?? gameState?.hands?.[playerId]?.length ?? 0);
+                return (
+                  <PodiumTile
+                    key={`bluff-podium-${playerId}`}
+                    label={idx === 0 ? 'Winner' : idx === 1 ? 'Runner Up' : 'Third'}
+                    playerName={player?.name || 'Player'}
+                    value={`${handCount}`}
+                    accent={idx === 0 ? 'var(--gold)' : idx === 1 ? 'var(--mint)' : 'var(--coral)'}
+                    isYou={playerId === myId}
+                  />
+                );
+              })}
+            </div>
+
+            <div className="space-y-3 overflow-y-auto pr-1">
+              {tableOrder.length ? <div className="label-micro mb-1">Table Order</div> : null}
+              {(tableOrder.length ? tableOrder : rankedIds).map((playerId, idx) => {
+                const player = players[playerId] || {};
+                const handCount = Number(gameState?.handCounts?.[playerId] ?? gameState?.hands?.[playerId]?.length ?? 0);
+                const actualIndex = tableOrder.length ? idx + 3 : idx;
+                return (
+                  <div key={`bluff-rank-${playerId}`} className="surface-glass flex items-center justify-between gap-3 rounded-[24px] p-4">
+                    <div className="flex items-center gap-3">
+                      <RankChip index={actualIndex} isWinner={actualIndex === 0} />
+                      <div>
+                        <div className="text-base font-semibold text-[var(--bg-cloud)]">
+                          {player?.name || 'Player'} {playerId === myId ? <span className="text-[var(--mint)]">(You)</span> : null}
+                        </div>
+                        <div className="mt-1 text-xs uppercase tracking-[0.16em] text-white/46">Cards left</div>
                       </div>
-                      <div className="mt-1 text-xs uppercase tracking-[0.16em] text-white/46">Cards left</div>
                     </div>
+                    <div className="headline-display text-3xl text-[var(--gold)]">{handCount}</div>
                   </div>
-                  <div className="headline-display text-3xl text-[var(--gold)]">{handCount}</div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
 
           <button onClick={actions.playAgain} className="btn-primary-game mt-5 w-full px-5 py-4">
@@ -123,6 +168,12 @@ export default function ResultsOverlay({ gameState, myId, actions }) {
   const allPlayers = Object.entries(players).sort((a, b) => (a[1]?.score || 0) - (b[1]?.score || 0));
   const allSums = Object.values(roundResults).map((r) => Number(r?.sum || 0));
   const minSum = allSums.length ? Math.min(...allSums) : null;
+  const leaderId = allPlayers[0]?.[0] || null;
+  const runnerUpId = allPlayers[1]?.[0] || null;
+  const leaderPlayer = leaderId ? players[leaderId] || {} : null;
+  const runnerUpPlayer = runnerUpId ? players[runnerUpId] || {} : null;
+  const leaderResult = leaderId ? roundResults[leaderId] || {} : {};
+  const runnerUpResult = runnerUpId ? roundResults[runnerUpId] || {} : {};
 
   return (
     <div className="absolute inset-0 z-[100] flex items-center justify-center overflow-hidden bg-[rgba(30,9,21,0.72)] p-4 backdrop-blur-xl">
@@ -135,10 +186,34 @@ export default function ResultsOverlay({ gameState, myId, actions }) {
           <div>
             <div className="label-micro">{gameState.knockerFailed ? 'Penalty Resolution' : 'Round Summary'}</div>
             <h2 className="headline-display mt-2 text-4xl text-[var(--bg-cloud)]">{title}</h2>
-            <p className="mt-2 max-w-2xl text-sm text-white/62">{subtitle}</p>
           </div>
           <div className={gameState.knockerFailed ? 'chip-danger' : 'chip-host'}>
             {gameState.knockerFailed ? 'Knock Failed' : 'Scored'}
+          </div>
+        </div>
+
+        <div className="mb-4 grid gap-3 lg:grid-cols-3">
+          {leaderPlayer ? (
+            <PodiumTile
+              label="Leader"
+              playerName={leaderPlayer?.name || 'Player'}
+              value={`${leaderResult?.newScore ?? leaderPlayer?.score ?? 0}`}
+              accent="var(--gold)"
+              isYou={leaderId === myId}
+            />
+          ) : null}
+          {runnerUpPlayer ? (
+            <PodiumTile
+              label="Runner Up"
+              playerName={runnerUpPlayer?.name || 'Player'}
+              value={`${runnerUpResult?.newScore ?? runnerUpPlayer?.score ?? 0}`}
+              accent="var(--mint)"
+              isYou={runnerUpId === myId}
+            />
+          ) : null}
+          <div className="surface-glass rounded-[24px] p-4">
+            <div className="label-micro">Lowest Sum</div>
+            <div className="headline-display mt-3 text-4xl text-[var(--gold)]">{minSum ?? 0}</div>
           </div>
         </div>
 

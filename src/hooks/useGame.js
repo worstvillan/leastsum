@@ -587,8 +587,9 @@ export function useGame() {
         roomCode: roomCodeRef.current,
         source: 'deck',
       });
+      return { ok: true };
     } catch {
-      // no-op; state remains authoritative from server
+      return { ok: false };
     }
   };
 
@@ -598,8 +599,9 @@ export function useGame() {
         roomCode: roomCodeRef.current,
         source: 'previous',
       });
+      return { ok: true };
     } catch {
-      // no-op; state remains authoritative from server
+      return { ok: false };
     }
   };
 

@@ -49,6 +49,36 @@
   --dur-slow: 320ms;
 }
 
+[data-theme='royal'] {
+  --bg-deep: #1b1427;
+  --bg-ink: #161629;
+  --bg-cherry: #41306b;
+  --bg-coral: #7a5cff;
+  --bg-apricot: #d7b8ff;
+  --bg-cloud: #f7f0ff;
+  --gold: #f4c96b;
+  --mint: #82d9ff;
+  --coral: #8b75ff;
+  --rose: #ff8ca8;
+  --emerald: #4cc7ba;
+  --ink: #1e1731;
+}
+
+[data-theme='midnight'] {
+  --bg-deep: #081219;
+  --bg-ink: #101d28;
+  --bg-cherry: #113042;
+  --bg-coral: #1a6578;
+  --bg-apricot: #4fc8c8;
+  --bg-cloud: #ecfffd;
+  --gold: #7df0db;
+  --mint: #87d9ff;
+  --coral: #42b0cc;
+  --rose: #5cd8b4;
+  --emerald: #2fb08e;
+  --ink: #0c1820;
+}
+
 html,
 body,
 #root {
@@ -64,10 +94,10 @@ body {
   margin: 0;
   overflow: hidden;
   background:
-    radial-gradient(circle at 15% 18%, rgba(255, 180, 112, 0.18), transparent 22%),
-    radial-gradient(circle at 78% 14%, rgba(254, 108, 123, 0.14), transparent 24%),
-    radial-gradient(circle at 50% 70%, rgba(125, 34, 60, 0.22), transparent 34%),
-    linear-gradient(160deg, #240d19 0%, #301126 26%, #5b1f37 58%, #9a3056 100%);
+    radial-gradient(circle at 15% 18%, color-mix(in srgb, var(--bg-apricot) 20%, transparent), transparent 22%),
+    radial-gradient(circle at 78% 14%, color-mix(in srgb, var(--rose) 18%, transparent), transparent 24%),
+    radial-gradient(circle at 50% 70%, color-mix(in srgb, var(--bg-cherry) 26%, transparent), transparent 34%),
+    linear-gradient(160deg, var(--bg-deep) 0%, var(--bg-ink) 26%, var(--bg-cherry) 58%, color-mix(in srgb, var(--bg-coral) 78%, #8f1c49 22%) 100%);
   color: var(--bg-cloud);
   font-family: var(--font-body);
   user-select: none;

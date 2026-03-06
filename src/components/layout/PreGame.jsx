@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { avatarColor } from '../../utils/gameUtils';
 
@@ -19,7 +19,6 @@ const CONFIG_DEFAULTS = {
   cardsPerPlayer: 6,
   maxPlayers: 4,
   elimScore: 200,
-  minTurnsToKnock: 1,
   knockerPenalty: 60,
   useJoker: false,
 };
@@ -40,20 +39,8 @@ const GAME_OPTIONS = {
       cardsPerPlayer: 6,
       maxPlayers: 4,
       elimScore: 200,
-      minTurnsToKnock: 1,
       knockerPenalty: 60,
       useJoker: false,
-    },
-    tutorial: {
-      goal: 'Finish each round with the lowest hand total.',
-      loop: ['Pick from deck or previous', 'Throw one rank or a matching set', 'Knock only when your hand is ready'],
-      tension: ['Open discard information', 'Timed knock windows', 'Penalty if the knock fails'],
-      visualCards: [
-        { rank: '5', suit: '♥' },
-        { rank: '7', suit: '♠' },
-        { rank: '2', suit: '♣' },
-      ],
-      spotlight: 'Low total wins',
     },
   },
   bluff: {
@@ -69,17 +56,6 @@ const GAME_OPTIONS = {
       gameMode: 'bluff',
       bluffDeckCount: 1,
       maxPlayers: 4,
-    },
-    tutorial: {
-      goal: 'Get rid of your cards before the table catches your lie.',
-      loop: ['Play cards face down', 'Declare a single rank for that play', 'Pass, close, or object when the claim feels wrong'],
-      tension: ['Hidden information every turn', 'Pressure on the active claim', 'One objection can flip the round'],
-      visualCards: [
-        { rank: '?', suit: '🂠' },
-        { rank: 'Q', suit: 'Claim' },
-        { rank: '!', suit: 'Obj' },
-      ],
-      spotlight: 'Best liar survives',
     },
   },
 };
@@ -110,130 +86,6 @@ function ModeTile({ option, onSelect }) {
         </div>
       </div>
     </button>
-  );
-}
-
-function TutorialPanel({ option }) {
-  const cardOffset = [-10, 0, 10];
-  const [activeStep, setActiveStep] = useState(0);
-
-  useEffect(() => {
-    const total = option.tutorial.loop.length;
-    if (!total) return undefined;
-    const id = window.setInterval(() => {
-      setActiveStep((prev) => (prev + 1) % total);
-    }, 1800);
-    return () => window.clearInterval(id);
-  }, [option]);
-
-  return (
-    <div className="surface-glass rounded-[28px] p-5">
-      <div className="mb-5 flex items-start justify-between gap-3">
-        <div>
-          <div className="label-micro">{option.eyebrow}</div>
-          <div className="headline-display mt-2 text-2xl text-[var(--bg-cloud)]">{option.title}</div>
-        </div>
-        <div
-          className="rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-[0.16em]"
-          style={{ background: 'rgba(255,248,239,0.12)', color: option.accent }}
-        >
-          {option.tutorial.spotlight}
-        </div>
-      </div>
-
-      <div className="grid gap-4 lg:grid-cols-[0.92fr_1.08fr]">
-        <div className="rounded-[24px] border border-[rgba(255,245,235,0.12)] bg-[rgba(255,248,239,0.04)] p-4">
-          <div className="label-micro">Table Snapshot</div>
-          <div className="mt-4 flex min-h-[140px] items-center justify-center">
-            <div className="relative h-[116px] w-[180px]">
-              {option.tutorial.visualCards.map((card, index) => (
-                <motion.div
-                  key={`${option.key}-visual-${card.rank}-${card.suit}-${index}`}
-                  className="absolute top-4 h-[92px] w-[66px] rounded-[18px] border border-[rgba(255,240,224,0.18)] bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(255,248,239,0.96))] shadow-[0_16px_30px_rgba(23,8,19,0.18)]"
-                  animate={{
-                    y: activeStep === index ? -10 : 0,
-                    scale: activeStep === index ? 1.04 : 1,
-                    boxShadow: activeStep === index
-                      ? '0 20px 36px rgba(23,8,19,0.24), 0 0 0 2px rgba(255,248,239,0.18)'
-                      : '0 16px 30px rgba(23,8,19,0.18)',
-                  }}
-                  transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
-                  style={{
-                    left: `${26 + index * 34}px`,
-                    transform: `rotate(${cardOffset[index] || 0}deg)`,
-                  }}
-                >
-                  <div className="absolute left-3 top-2 text-[12px] font-black text-[var(--ink)]">{card.rank}</div>
-                  <div className="absolute bottom-2 right-3 text-[11px] font-bold text-[rgba(79,55,71,0.76)]">{card.suit}</div>
-                  <div
-                    className="absolute inset-x-3 top-8 rounded-full px-2 py-1 text-center text-[9px] font-black uppercase tracking-[0.14em]"
-                    style={{
-                      background: activeStep === index ? 'rgba(255,248,239,0.16)' : 'rgba(255,248,239,0.08)',
-                      color: option.accent,
-                    }}
-                  >
-                    {index === 0 ? 'Hand' : index === 1 ? 'Play' : 'Risk'}
-                  </div>
-                </motion.div>
-              ))}
-            </div>
-          </div>
-          <div className="rounded-[18px] border border-[rgba(255,245,235,0.1)] bg-[rgba(255,248,239,0.04)] p-3">
-            <div className="label-micro">Goal</div>
-            <div className="mt-2 text-sm leading-6 text-white/78">{option.tutorial.goal}</div>
-          </div>
-        </div>
-
-        <div className="space-y-4">
-          <div>
-            <div className="label-micro mb-3">Round Flow</div>
-            <div className="grid gap-3">
-              {option.tutorial.loop.map((step, index) => (
-                <div key={`${option.key}-loop-${step}`} className="relative">
-                  {index < option.tutorial.loop.length - 1 ? (
-                    <div className="absolute left-4 top-10 h-8 w-px bg-[rgba(255,248,239,0.12)]" />
-                  ) : null}
-                  <motion.div
-                    animate={{
-                      borderColor: activeStep === index ? 'rgba(255,248,239,0.22)' : 'rgba(255,245,235,0.12)',
-                      backgroundColor: activeStep === index ? 'rgba(255,248,239,0.08)' : 'rgba(255,248,239,0.04)',
-                      x: activeStep === index ? 4 : 0,
-                    }}
-                    transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-                    className="flex items-center gap-3 rounded-[20px] border px-4 py-3"
-                  >
-                    <div
-                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-black"
-                      style={{
-                        background: activeStep === index ? 'rgba(255,248,239,0.2)' : 'rgba(255,248,239,0.12)',
-                        color: option.accent,
-                      }}
-                    >
-                      {index + 1}
-                    </div>
-                    <div className="text-sm text-white/76">{step}</div>
-                  </motion.div>
-                </div>
-              ))}
-            </div>
-            <div className="mt-3 flex gap-2">
-              {option.tutorial.loop.map((step, index) => (
-                <motion.div
-                  key={`${option.key}-indicator-${step}`}
-                  animate={{
-                    width: activeStep === index ? 28 : 10,
-                    opacity: activeStep === index ? 1 : 0.42,
-                  }}
-                  transition={{ duration: 0.25 }}
-                  className="h-2 rounded-full"
-                  style={{ background: option.accent }}
-                />
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
   );
 }
 
@@ -362,20 +214,6 @@ export function Lobby({ onCreateRoom, onJoinRoom, error, clearError, loading }) 
               {Object.values(GAME_OPTIONS).map((option) => (
                 <ModeTile key={option.key} option={option} onSelect={selectMode} />
               ))}
-            </div>
-
-            <div className="surface-panel p-5 sm:p-6 lg:col-span-2">
-              <div className="mb-4 flex items-center justify-between gap-3">
-                <div>
-                  <div className="label-micro">How to Play</div>
-                  <div className="headline-display mt-2 text-3xl text-[var(--bg-cloud)]">Game Briefing</div>
-                </div>
-              </div>
-              <div className="grid gap-4 md:grid-cols-2">
-                {Object.values(GAME_OPTIONS).map((option) => (
-                  <TutorialPanel key={`tutorial-${option.key}`} option={option} />
-                ))}
-              </div>
             </div>
           </div>
         ) : (
@@ -527,34 +365,44 @@ export function WaitingRoom({
   const [showConfig, setShowConfig] = useState(false);
   const [kickingPlayerId, setKickingPlayerId] = useState('');
   const [kickError, setKickError] = useState('');
+  const commitTimerRef = useRef(null);
   const remoteCfg = { ...CONFIG_DEFAULTS, ...(gameState?.config ?? {}) };
   const remoteCfgKey = JSON.stringify(remoteCfg);
   const [draftCfg, setDraftCfg] = useState(remoteCfg);
   const [isEditingConfig, setIsEditingConfig] = useState(false);
-  const [pendingConfigKey, setPendingConfigKey] = useState('');
   const cfg = draftCfg;
   const players = Object.entries(gameState?.players ?? {}).sort((a, b) => a[1].order - b[1].order);
   const hostPlayerId = gameState?.hostPlayerId ?? players[0]?.[0] ?? null;
 
   useEffect(() => {
-    if (isEditingConfig) return;
-    if (pendingConfigKey && pendingConfigKey !== remoteCfgKey) return;
     setDraftCfg(remoteCfg);
-    if (pendingConfigKey && pendingConfigKey === remoteCfgKey) {
-      setPendingConfigKey('');
+  }, [remoteCfgKey]);
+
+  useEffect(() => () => {
+    if (commitTimerRef.current) {
+      clearTimeout(commitTimerRef.current);
     }
-  }, [remoteCfg, remoteCfgKey, isEditingConfig, pendingConfigKey]);
+  }, []);
 
-  const submitConfig = (nextCfg) => {
-    const nextKey = JSON.stringify(nextCfg);
-    setDraftCfg(nextCfg);
-    setPendingConfigKey(nextKey);
-    onUpdateConfig(nextCfg);
-  };
-
-  const upd = (key, val) => {
-    submitConfig({ ...draftCfg, [key]: val });
-  };
+  useEffect(() => {
+    if (!isHost || !showConfig) return undefined;
+    if (isEditingConfig) return undefined;
+    const draftKey = JSON.stringify(draftCfg);
+    if (draftKey === remoteCfgKey) return undefined;
+    if (commitTimerRef.current) {
+      clearTimeout(commitTimerRef.current);
+    }
+    commitTimerRef.current = setTimeout(() => {
+      commitTimerRef.current = null;
+      onUpdateConfig(draftCfg);
+    }, 180);
+    return () => {
+      if (commitTimerRef.current) {
+        clearTimeout(commitTimerRef.current);
+        commitTimerRef.current = null;
+      }
+    };
+  }, [draftCfg, remoteCfgKey, isEditingConfig, isHost, onUpdateConfig, showConfig]);
 
   const updLocal = (key, val) => {
     setDraftCfg((prev) => ({ ...prev, [key]: val }));
@@ -566,7 +414,6 @@ export function WaitingRoom({
 
   const commitSliderEdit = () => {
     setIsEditingConfig(false);
-    submitConfig(draftCfg);
   };
 
   const onKickAttempt = async (targetPlayerId, playerName) => {
@@ -593,7 +440,7 @@ export function WaitingRoom({
         <div className="space-y-5">
           <PremiumHero
             eyebrow="Waiting Room"
-            title={`Room ${roomCode}`}
+            title="Waiting Room"
             subtitle="Waiting for players."
           />
 
@@ -717,17 +564,6 @@ export function WaitingRoom({
                           />
 
                           <SliderRow
-                            label="Min Turns to Knock"
-                            min={0}
-                            max={5}
-                            value={cfg.minTurnsToKnock}
-                            onChange={(v) => updLocal('minTurnsToKnock', v)}
-                            onStart={startSliderEdit}
-                            onCommit={commitSliderEdit}
-                            display={cfg.minTurnsToKnock === 0 ? 'Any' : `${cfg.minTurnsToKnock}`}
-                          />
-
-                          <SliderRow
                             label="Knocker Penalty"
                             min={0}
                             max={100}
@@ -746,7 +582,7 @@ export function WaitingRoom({
                                 <div className="mt-1 text-sm text-white/58">Enable one -1 point rank in the deck.</div>
                               </div>
                               <button
-                                onClick={() => upd('useJoker', !cfg.useJoker)}
+                                onClick={() => updLocal('useJoker', !cfg.useJoker)}
                                 className={`relative h-7 w-14 rounded-full border transition-all ${cfg.useJoker ? 'border-[rgba(255,202,104,0.55)] bg-[rgba(255,202,104,0.2)]' : 'border-white/18 bg-white/8'}`}
                               >
                                 <span

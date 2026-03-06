@@ -7,7 +7,7 @@ import {
   useParticipants,
 } from '@livekit/components-react';
 import {
-  avatarColor, handSum, isJokerMatch, playSound, RANKS, vibrate,
+  avatarColor, cardValue, handSum, isJokerMatch, playSound, RANKS, SUITS, vibrate,
 } from '../../utils/gameUtils';
 import PlayingCard, { CardBack, MiniCardBack } from '../hand/PlayingCard';
 import GameBoardCanvas from './GameBoardCanvas';
@@ -19,6 +19,7 @@ const STYLES = `
   @keyframes drift  { 0%,100%{transform:translate3d(0,0,0)} 50%{transform:translate3d(18px,-10px,0)} }
   @keyframes pulsemic { 0%,100%{box-shadow:0 0 0 0 rgba(74,222,128,.6)} 50%{box-shadow:0 0 0 7px rgba(74,222,128,0)} }
   @keyframes shimmerline { 0%{transform:translateX(-120%)} 100%{transform:translateX(120%)} }
+  @keyframes seatglow { 0%,100%{opacity:.34;transform:scale(1)} 50%{opacity:.58;transform:scale(1.06)} }
 `;
 
 // ── SVG icons ──────────────────────────────────────────────────
@@ -36,6 +37,11 @@ const IconMicOff = () => (
 const IconTimer = () => (
   <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
     <path d="M15 1H9v2h6V1zm-1 12.59L16.59 16 18 14.59l-3-3V7h-2v5.59zM12 4a9 9 0 1 0 9 9 9 9 0 0 0-9-9zm0 16a7 7 0 1 1 7-7 7 7 0 0 1-7 7z"/>
+  </svg>
+);
+const IconCrown = () => (
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+    <path d="M5 18h14l1-9-5.5 3-2.5-6-2.5 6L4 9l1 9z" />
   </svg>
 );
 
@@ -177,6 +183,7 @@ function OpponentSeat({
   player,
   cardCount,
   isActive,
+  isLeaderPlayer = false,
   id,
   roomName = '',
   fanRotation = 0,
@@ -201,7 +208,18 @@ function OpponentSeat({
               : 'bg-[rgba(40,16,24,0.46)] border-[rgba(255,245,235,0.18)] backdrop-blur-xl'
           }`}
         >
+          <div
+            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-white/18 text-[10px] font-black text-white"
+            style={{ backgroundColor: avatarColor(player?.name || 'P') }}
+          >
+            {(player?.name || 'P')[0]?.toUpperCase?.() || 'P'}
+          </div>
           <span className="font-semibold text-[var(--bg-cloud)] text-xs whitespace-nowrap">{player.name}</span>
+          {isLeaderPlayer ? (
+            <span className="flex h-5 w-5 items-center justify-center rounded-full border border-[rgba(255,202,104,0.34)] bg-[rgba(255,202,104,0.14)] text-[var(--gold)]">
+              <IconCrown />
+            </span>
+          ) : null}
         </div>
         {showTurnTimer && (
           <TurnTimerBadge
@@ -224,6 +242,15 @@ function OpponentSeat({
         className="relative"
         style={{ width: 72, height: 62, transform: `rotate(${fanRotation}deg)` }}
       >
+        {isActive ? (
+          <div
+            className="absolute inset-[-12px] rounded-[28px] pointer-events-none"
+            style={{
+              background: 'radial-gradient(circle at center, rgba(255,202,104,0.2), transparent 62%)',
+              animation: 'seatglow 1.5s ease-in-out infinite',
+            }}
+          />
+        ) : null}
         {Array.from({ length: Math.max(fanned, 1) }).map((_, i) => {
           const angle = fanned <= 1 ? 0 : -spread / 2 + (spread / Math.max(fanned - 1, 1)) * i;
           return (
@@ -384,10 +411,48 @@ function sortHandEntriesForBluff(entries = []) {
     .map((entry) => entry.token);
 }
 
+function sortHandEntriesForLeastSum(entries = [], jokerCard = null) {
+  const suitIndex = (suit) => {
+    const idx = SUITS.indexOf(suit);
+    return idx >= 0 ? idx : 999;
+  };
+
+  return [...entries]
+    .sort((a, b) => {
+      const aIsJoker = isJokerMatch(a?.card, jokerCard);
+      const bIsJoker = isJokerMatch(b?.card, jokerCard);
+      if (aIsJoker !== bIsJoker) return aIsJoker ? -1 : 1;
+
+      const byValue = cardValue(a?.card) - cardValue(b?.card);
+      if (byValue !== 0) return byValue;
+
+      const bySuit = suitIndex(a?.card?.suit) - suitIndex(b?.card?.suit);
+      if (bySuit !== 0) return bySuit;
+
+      return (a?.handIndex ?? 0) - (b?.handIndex ?? 0);
+    })
+    .map((entry) => entry.token);
+}
+
+function sortHandEntriesForMode(entries = [], { isBluffMode = false, jokerCard = null } = {}) {
+  return isBluffMode
+    ? sortHandEntriesForBluff(entries)
+    : sortHandEntriesForLeastSum(entries, jokerCard);
+}
+
 // ══════════════════════════════════════════════════════════════
 // MAIN GAME ARENA
 // ══════════════════════════════════════════════════════════════
-export default function GameArena({ gameState, myId, roomCode = '', actions, voiceToken = '', voiceUrl = '', voiceError = '' }) {
+export default function GameArena({
+  gameState,
+  myId,
+  roomCode = '',
+  actions,
+  voiceToken = '',
+  voiceUrl = '',
+  voiceError = '',
+  theme = 'midnight',
+}) {
   const [selectedTokens,  setSelectedTokens]  = useState([]);
   const [displayOrder,    setDisplayOrder]    = useState([]);
   const [dragToken,       setDragToken]       = useState('');
@@ -396,12 +461,17 @@ export default function GameArena({ gameState, myId, roomCode = '', actions, voi
   const [nowMs,           setNowMs]           = useState(() => Date.now());
   const [actionWarning,   setActionWarning]   = useState('');
   const [declaredRank,    setDeclaredRank]    = useState('A');
+  const [throwFxCards,    setThrowFxCards]    = useState([]);
+  const [pendingHiddenTokens, setPendingHiddenTokens] = useState([]);
+  const [optimisticUi,    setOptimisticUi]    = useState(null);
   const prevTurnRef = useRef(null);
+  const prevIsMyTurnRef = useRef(false);
+  const prevStatusRef = useRef('');
   const handStripRef = useRef(null);
   const cardNodeRefs = useRef(new Map());
   const displayOrderRef = useRef([]);
   const handEntriesRef = useRef([]);
-  const bluffInitialSortRoundRef = useRef(null);
+  const clientSortedRoundRef = useRef(null);
   const autoScrollRafRef = useRef(0);
   const interactionRef = useRef({
     pointerId: null,
@@ -482,8 +552,53 @@ export default function GameArena({ gameState, myId, roomCode = '', actions, voi
   const remainingSec       = timerActive ? Math.ceil(remainingMs / 1000) : 0;
   const timerPct           = timerActive ? Math.max(0, Math.min(100, (remainingMs / totalTurnMs) * 100)) : 0;
   const timerUrgent        = timerActive && remainingMs <= 7000;
+  const phaseLabel = isBluffMode
+    ? 'Bluff Chain'
+    : phase === 'pick'
+    ? 'Pick'
+    : phase === 'throw'
+    ? 'Throw'
+    : 'Round';
+  const visualTurnId = optimisticUi?.turnId ?? currentTurnId;
+  const visualPhase = optimisticUi?.phase ?? phase;
+  const visualCurrentTurnPlayer = visualTurnId ? gameState?.players?.[visualTurnId] : null;
+  const visualIsMyTurn = visualTurnId === myId;
+  const visualDeckCount = Math.max(0, deckCount + Number(optimisticUi?.deckDelta || 0));
+  const visualPreviousCard = optimisticUi?.previousTaken ? null : previousOpenCard;
+  const phaseLabelText = isBluffMode
+    ? 'Bluff Chain'
+    : visualPhase === 'pick'
+    ? 'Pick'
+    : visualPhase === 'throw'
+    ? 'Throw'
+    : 'Round';
+  const stageStatus = optimisticUi?.status
+    || (visualIsMyTurn
+      ? (isBluffMode ? 'Your move' : visualPhase === 'pick' ? 'Pick a card' : 'Choose your throw')
+      : `${visualCurrentTurnPlayer?.name ?? 'Player'} turn`);
 
   const ringOrder = allPlayersSorted.map(([id]) => id);
+  const leaderPlayerId = (() => {
+    if (isBluffMode) {
+      const finishOrder = Array.isArray(gameState?.bluffFinishOrder) ? gameState.bluffFinishOrder : [];
+      if (finishOrder.length) return finishOrder[0];
+      const rankedByCards = allPlayersSorted
+        .map(([id, player]) => ({
+          id,
+          order: Number(player?.order ?? 0),
+          cardCount: Number(gameState?.handCounts?.[id] ?? hands?.[id]?.length ?? 0),
+        }))
+        .sort((a, b) => a.cardCount - b.cardCount || a.order - b.order);
+      return rankedByCards[0]?.id ?? null;
+    }
+    return allPlayersSorted
+      .slice()
+      .sort((a, b) => {
+        const byScore = Number(a[1]?.score ?? 0) - Number(b[1]?.score ?? 0);
+        if (byScore !== 0) return byScore;
+        return Number(a[1]?.order ?? 0) - Number(b[1]?.order ?? 0);
+      })[0]?.[0] ?? null;
+  })();
   const myRingIdx = ringOrder.indexOf(myId);
   const orderedOpponentIds = myRingIdx >= 0
     ? [...ringOrder.slice(myRingIdx + 1), ...ringOrder.slice(0, myRingIdx)]
@@ -502,6 +617,7 @@ export default function GameArena({ gameState, myId, roomCode = '', actions, voi
     ? displayOrder.filter((token) => handTokenSet.has(token))
     : handEntries.map((entry) => entry.token);
   const displayCards = orderedTokens
+    .filter((token) => !pendingHiddenTokens.includes(token))
     .map((token) => {
       const entry = byToken.get(token);
       if (!entry) return null;
@@ -512,6 +628,9 @@ export default function GameArena({ gameState, myId, roomCode = '', actions, voi
       };
     })
     .filter(Boolean);
+  const handVisualCards = optimisticUi?.drawPreview
+    ? [...displayCards, { token: '__draw_preview__', preview: true, source: optimisticUi.drawPreview.source, rank: optimisticUi.drawPreview.rank, suit: optimisticUi.drawPreview.suit }]
+    : displayCards;
 
   useEffect(() => {
     handEntriesRef.current = handEntries;
@@ -534,23 +653,27 @@ export default function GameArena({ gameState, myId, roomCode = '', actions, voi
   }, [myCards]);
 
   useEffect(() => {
-    if (!isBluffMode) {
-      bluffInitialSortRoundRef.current = null;
-      return;
-    }
     if (gameState?.status !== 'playing') {
-      bluffInitialSortRoundRef.current = null;
+      clientSortedRoundRef.current = null;
       return;
     }
 
     const activeRound = Number(gameState?.round || 0);
     if (!Number.isFinite(activeRound) || activeRound <= 0) return;
-    if (bluffInitialSortRoundRef.current === activeRound) return;
+    if (clientSortedRoundRef.current === activeRound) return;
     if (!handEntries.length) return;
 
-    setDisplayOrder(sortHandEntriesForBluff(handEntries));
-    bluffInitialSortRoundRef.current = activeRound;
-  }, [isBluffMode, gameState?.status, gameState?.round, handEntries]);
+    setDisplayOrder(sortHandEntriesForMode(handEntries, { isBluffMode, jokerCard }));
+    clientSortedRoundRef.current = activeRound;
+  }, [isBluffMode, jokerCard, gameState?.status, gameState?.round, handEntries]);
+
+  useEffect(() => {
+    const previousWasMyTurn = prevIsMyTurnRef.current;
+    if (previousWasMyTurn && !isMyTurn && handEntries.length) {
+      setDisplayOrder(sortHandEntriesForMode(handEntries, { isBluffMode, jokerCard }));
+    }
+    prevIsMyTurnRef.current = isMyTurn;
+  }, [isMyTurn, handEntries, isBluffMode, jokerCard]);
 
   useEffect(() => { setSelectedTokens([]); }, [phase, currentTurnId]);
 
@@ -584,6 +707,34 @@ export default function GameArena({ gameState, myId, roomCode = '', actions, voi
     const id = setTimeout(() => setActionWarning(''), 2200);
     return () => clearTimeout(id);
   }, [actionWarning]);
+
+  useEffect(() => {
+    if (!gameState?.status) return;
+    if (prevStatusRef.current === gameState.status) return;
+    if (gameState.status === 'roundEnd') playSound('reveal');
+    if (gameState.status === 'gameover') playSound('victory');
+    prevStatusRef.current = gameState.status;
+  }, [gameState?.status]);
+
+  useEffect(() => {
+    if (!throwFxCards.length) return undefined;
+    const id = setTimeout(() => setThrowFxCards([]), 460);
+    return () => clearTimeout(id);
+  }, [throwFxCards]);
+
+  useEffect(() => {
+    if (!optimisticUi) return;
+    setOptimisticUi(null);
+  }, [phase, currentTurnId, deckCount, previousOpenCard?.rank, previousOpenCard?.suit, myCards.length]);
+
+  useEffect(() => {
+    if (!pendingHiddenTokens.length) return;
+    const currentSet = new Set(handEntries.map((entry) => entry.token));
+    const stillHidden = pendingHiddenTokens.filter((token) => currentSet.has(token));
+    if (stillHidden.length !== pendingHiddenTokens.length) {
+      setPendingHiddenTokens(stillHidden);
+    }
+  }, [handEntries, pendingHiddenTokens]);
 
   const stopAutoScroll = () => {
     if (autoScrollRafRef.current) {
@@ -905,9 +1056,7 @@ export default function GameArena({ gameState, myId, roomCode = '', actions, voi
   const handLiftReservePx = isBluffMode ? 90 : 72;
   const actionBlockReason = isBluffMode
     ? ''
-    : (!isMyTurn
-      ? 'Wait for your turn'
-      : phase === 'pick'
+    : (phase === 'pick'
       ? 'Pick from deck/previous first'
       : (phase !== 'throw' && phase !== 'pick')
       ? 'Action unavailable in current phase'
@@ -959,13 +1108,30 @@ export default function GameArena({ gameState, myId, roomCode = '', actions, voi
   };
 
   const onThrowAttempt = async () => {
+    const tokensToHide = [...selectedTokens];
+    const nextTurnIdx = effectiveTurnOrder.length
+      ? (currentTurnIdx + 1) % effectiveTurnOrder.length
+      : 0;
+    const nextTurnId = effectiveTurnOrder[nextTurnIdx] ?? null;
     vibrate(isThrowMatch ? [30, 20, 60] : 30);
     playSound(isThrowMatch ? 'match' : 'discard');
+    setThrowFxCards(selectedCards.slice(0, 4));
+    setPendingHiddenTokens(tokensToHide);
+    setSelectedTokens([]);
+    setOptimisticUi({
+      phase: 'pick',
+      turnId: nextTurnId,
+      status: nextTurnId ? `${resolvePlayerName(nextTurnId)} turn` : 'Next turn',
+    });
     const result = await actions.throwSelected(selectedHandIndices);
     if (result?.ok) {
       setActionWarning('');
       return;
     }
+    setThrowFxCards([]);
+    setPendingHiddenTokens([]);
+    setSelectedTokens(tokensToHide);
+    setOptimisticUi(null);
     if (result?.reason === 'MATCH_REQUIRES_ONE_CARD_LEFT') {
       setActionWarning('Match throw must leave at least 1 card in hand.');
       vibrate([18, 12, 18]);
@@ -976,8 +1142,17 @@ export default function GameArena({ gameState, myId, roomCode = '', actions, voi
 
   const onBluffPlayAttempt = async () => {
     if (!canBluffPlay) return;
+    const tokensToHide = [...selectedTokens];
     vibrate(30);
     playSound('discard');
+    setThrowFxCards(selectedCards.slice(0, 4));
+    setPendingHiddenTokens(tokensToHide);
+    setSelectedTokens([]);
+    setOptimisticUi({
+      phase: 'bluff_play',
+      turnId: myId,
+      status: 'Placing claim...',
+    });
     const rankToDeclare = activeBluffRank || declaredRank;
     const placeClaim = actions.bluffPlaceClaim || actions.bluffPlay;
     const result = await placeClaim(selectedHandIndices, rankToDeclare);
@@ -985,7 +1160,43 @@ export default function GameArena({ gameState, myId, roomCode = '', actions, voi
       setActionWarning('');
       return;
     }
+    setThrowFxCards([]);
+    setPendingHiddenTokens([]);
+    setSelectedTokens(tokensToHide);
+    setOptimisticUi(null);
     setActionWarning(result?.error || result?.message || 'Place Claim is not allowed right now.');
+  };
+
+  const onPickDeckAttempt = async () => {
+    if (!canPick) return;
+    vibrate(25);
+    playSound('draw');
+    setOptimisticUi({
+      phase: 'throw',
+      turnId: myId,
+      deckDelta: -1,
+      drawPreview: { source: 'deck' },
+      status: 'Drawing...',
+    });
+    const result = await actions.pickFromDeck();
+    if (result?.ok) return;
+    setOptimisticUi(null);
+  };
+
+  const onPickPreviousAttempt = async () => {
+    if (!canPick || !previousOpenCard) return;
+    vibrate(25);
+    playSound('draw');
+    setOptimisticUi({
+      phase: 'throw',
+      turnId: myId,
+      previousTaken: true,
+      drawPreview: { source: 'previous', rank: previousOpenCard.rank, suit: previousOpenCard.suit },
+      status: 'Taking previous...',
+    });
+    const result = await actions.pickFromPrevious();
+    if (result?.ok) return;
+    setOptimisticUi(null);
   };
 
   const onBluffPassAttempt = async () => {
@@ -1200,6 +1411,14 @@ export default function GameArena({ gameState, myId, roomCode = '', actions, voi
             'radial-gradient(circle at 18% 16%, rgba(255,176,118,0.16), transparent 20%), radial-gradient(circle at 82% 12%, rgba(241,100,124,0.14), transparent 18%), radial-gradient(circle at 50% 74%, rgba(140,234,214,0.1), transparent 24%), linear-gradient(160deg, #2c1220 0%, #38162e 26%, #732b42 58%, #ff986f 100%)',
         }}
       >
+        <div
+          className="pointer-events-none absolute left-1/2 top-[44%] z-0 h-[540px] w-[820px] rounded-full"
+          style={{
+            transform: 'translate(-50%, -50%)',
+            background: 'radial-gradient(circle at center, rgba(255,255,255,0.08), rgba(255,202,104,0.06) 20%, transparent 68%)',
+            filter: 'blur(22px)',
+          }}
+        />
         <div className="absolute inset-0 pointer-events-none overflow-hidden">
           {[
             { w:240, h:110, top:'4%', left:'-3%', dur:'18s', dir:'normal', bg:'rgba(255,177,120,0.14)' },
@@ -1229,6 +1448,44 @@ export default function GameArena({ gameState, myId, roomCode = '', actions, voi
           )}
         </AnimatePresence>
 
+        <AnimatePresence>
+          {throwFxCards.length > 0 && (
+            <div className="pointer-events-none absolute inset-0 z-[18]">
+              {throwFxCards.map((card, idx) => (
+                <motion.div
+                  key={`throw-fx-${card?.rank || '?'}-${card?.suit || '?'}-${idx}`}
+                  initial={{
+                    x: 0,
+                    y: 0,
+                    rotate: (idx - (throwFxCards.length - 1) / 2) * 8,
+                    opacity: 0,
+                    scale: 0.96,
+                  }}
+                  animate={{
+                    x: (idx - (throwFxCards.length - 1) / 2) * 28,
+                    y: -270 - idx * 10,
+                    rotate: (idx - (throwFxCards.length - 1) / 2) * 14,
+                    opacity: [0, 1, 1, 0],
+                    scale: [0.96, 1.02, 1, 0.98],
+                  }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.42, ease: [0.22, 1, 0.36, 1] }}
+                  className="absolute bottom-[104px] left-1/2 -translate-x-1/2"
+                >
+                  <PlayingCard
+                    rank={card?.rank}
+                    suit={card?.suit}
+                    size="md"
+                    isDisabled
+                    isJoker={isJokerMatch(card, jokerCard)}
+                    style={{ boxShadow: '0 18px 36px rgba(23,8,19,0.28)' }}
+                  />
+                </motion.div>
+              ))}
+            </div>
+          )}
+        </AnimatePresence>
+
         {/* Results overlay */}
         {(gameState.status === 'roundEnd' || gameState.status === 'gameover') && (
           <ResultsOverlay gameState={gameState} myId={myId} actions={actions} />
@@ -1241,16 +1498,26 @@ export default function GameArena({ gameState, myId, roomCode = '', actions, voi
           {resolvedRoomCode} · RD {gameState.round ?? 1}
         </div>
 
+        <div className="fixed left-1/2 top-[3.65rem] z-40 -translate-x-1/2 flex items-center gap-2">
+          <div className="rounded-full border border-[rgba(255,245,235,0.14)] bg-[rgba(40,16,24,0.42)] px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.18em] text-[var(--gold)] backdrop-blur-xl">
+            {phaseLabelText}
+          </div>
+          <div className="rounded-full border border-[rgba(255,245,235,0.14)] bg-[rgba(40,16,24,0.38)] px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/76 backdrop-blur-xl">
+            {stageStatus}
+          </div>
+        </div>
+
         {!hasVoice && (
-          <div className="fixed left-1/2 top-16 z-40 whitespace-nowrap rounded-full border border-[rgba(255,245,235,0.16)] bg-[rgba(40,16,24,0.46)] px-3 py-1 text-[10px] font-black uppercase tracking-wide text-white/80 backdrop-blur-xl -translate-x-1/2">
+          <div className="fixed left-1/2 top-[5.8rem] z-40 whitespace-nowrap rounded-full border border-[rgba(255,245,235,0.16)] bg-[rgba(40,16,24,0.46)] px-3 py-1 text-[10px] font-black uppercase tracking-wide text-white/80 backdrop-blur-xl -translate-x-1/2">
             {voiceError || 'Voice unavailable. Game continues normally.'}
           </div>
         )}
 
         <div className="fixed right-3 top-3 z-40 rounded-[24px] border border-[rgba(255,245,235,0.16)] bg-[rgba(40,16,24,0.42)] px-4 py-3 text-right backdrop-blur-xl shadow-[0_18px_34px_rgba(23,8,19,0.18)]">
+          {/* <div className="chip-score justify-center">{theme}</div> */}
           {!isBluffMode ? (
             <>
-              <div className="label-micro">Score</div>
+              <div className="label-micro mt-2">Score</div>
               <div className="headline-display text-3xl leading-tight text-[var(--gold)]">
                 {myPlayer.score || 0}
               </div>
@@ -1267,8 +1534,21 @@ export default function GameArena({ gameState, myId, roomCode = '', actions, voi
         <div className="fixed left-3 top-3 z-40 rounded-[24px] border border-[rgba(255,245,235,0.16)] bg-[rgba(40,16,24,0.42)] px-3 py-3 backdrop-blur-xl shadow-[0_18px_34px_rgba(23,8,19,0.18)]">
           <div className="label-micro mb-2">Opponents</div>
           {opponents.map(([id, p]) => (
-            <div key={id} className="flex justify-between gap-4 text-xs">
-              <span className="max-w-[84px] truncate font-semibold text-[var(--bg-cloud)]">{p.name}</span>
+            <div key={id} className="flex items-center justify-between gap-4 py-0.5 text-xs">
+              <div className="flex min-w-0 items-center gap-2">
+                <div
+                  className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-white/14 text-[9px] font-black text-white"
+                  style={{ backgroundColor: avatarColor(p?.name || 'P') }}
+                >
+                  {(p?.name || 'P')[0]?.toUpperCase?.() || 'P'}
+                </div>
+                <span className="max-w-[84px] truncate font-semibold text-[var(--bg-cloud)]">{p.name}</span>
+                {id === leaderPlayerId ? (
+                  <span className="text-[var(--gold)]">
+                    <IconCrown />
+                  </span>
+                ) : null}
+              </div>
               {!isBluffMode ? <span className="font-black text-[var(--gold)]">{p.score || 0}</span> : null}
             </div>
           ))}
@@ -1283,7 +1563,8 @@ export default function GameArena({ gameState, myId, roomCode = '', actions, voi
               <OpponentSeat
                 player={player}
                 cardCount={hands[id]?.length ?? 0}
-                isActive={id === currentTurnId}
+                isActive={id === visualTurnId}
+                isLeaderPlayer={id === leaderPlayerId}
                 id={id}
                 roomName={resolvedRoomCode}
                 fanRotation={slot.fan}
@@ -1329,40 +1610,47 @@ export default function GameArena({ gameState, myId, roomCode = '', actions, voi
               display: isBluffMode ? 'none' : 'flex', alignItems: 'center', justifyContent: 'center',
             }}
           >
+            <div
+              className="absolute inset-[-24px] pointer-events-none rounded-[50%]"
+              style={{
+                background: 'radial-gradient(circle at center, rgba(255,202,104,0.1), transparent 66%)',
+                opacity: visualIsMyTurn ? 0.45 : 0.24,
+              }}
+            />
             <div className="absolute inset-[-6px] rounded-[50%] pointer-events-none"
                  style={{ border: '4px solid rgba(255,241,224,0.22)' }} />
             <div className="absolute inset-[12px] rounded-[50%] pointer-events-none border border-[rgba(255,248,239,0.12)]" />
 
             <div className="flex items-center gap-5 z-10">
-                <div className="flex flex-col items-center gap-1 relative">
+                <div className="flex flex-col items-center gap-1 relative rounded-[22px] border border-[rgba(255,245,235,0.08)] bg-[rgba(255,248,239,0.04)] px-3 py-2">
                   <motion.div
                     animate={canPick ? { y: [0, -5, 0] } : {}}
                     transition={{ repeat: Infinity, duration: 1.6 }}
                   >
                     <CardBack
                       size="md"
-                      onClick={canPick ? () => { vibrate(25); playSound('draw'); actions.pickFromDeck(); } : undefined}
-                      className={canPick ? 'ring-2 ring-[rgba(255,202,104,0.9)] shadow-[0_0_18px_rgba(255,188,92,0.45)] cursor-pointer' : ''}
+                      onClick={canPick && !optimisticUi?.drawPreview ? onPickDeckAttempt : undefined}
+                      className={canPick && !optimisticUi?.drawPreview ? 'ring-2 ring-[rgba(255,202,104,0.9)] shadow-[0_0_18px_rgba(255,188,92,0.45)] cursor-pointer' : ''}
                     />
                   </motion.div>
                   <div className="headline-display absolute -right-2.5 -top-2.5 z-10 flex h-6 w-6 items-center justify-center rounded-full border text-[10px] font-black shadow"
                        style={{ background:'linear-gradient(180deg,#ffd788,#ffb463)', color:'#34171a', borderColor:'rgba(108,52,19,0.24)' }}>
-                    {deckCount > 99 ? '99+' : deckCount}
+                    {visualDeckCount > 99 ? '99+' : visualDeckCount}
                   </div>
                   <span className="label-micro text-white/78">Deck</span>
                 </div>
 
-                <div className="flex flex-col items-center gap-1 relative">
+                <div className="flex flex-col items-center gap-1 relative rounded-[22px] border border-[rgba(255,245,235,0.08)] bg-[rgba(255,248,239,0.04)] px-3 py-2">
                   <motion.div
-                    animate={canPick && previousOpenCard ? { scale: [1, 1.04, 1] } : {}}
+                    animate={canPick && visualPreviousCard ? { scale: [1, 1.04, 1] } : {}}
                     transition={{ repeat: Infinity, duration: 1.6 }}
                   >
-                    {previousOpenCard ? (
+                    {visualPreviousCard ? (
                       <PlayingCard
-                        rank={previousOpenCard.rank}
-                        suit={previousOpenCard.suit}
+                        rank={visualPreviousCard.rank}
+                        suit={visualPreviousCard.suit}
                         size="md"
-                        onClick={canPick ? () => { vibrate(25); playSound('draw'); actions.pickFromPrevious(); } : undefined}
+                        onClick={canPick ? onPickPreviousAttempt : undefined}
                         className={canPick ? 'ring-2 ring-[rgba(255,202,104,0.9)] shadow-[0_0_18px_rgba(255,188,92,0.45)] cursor-pointer' : ''}
                         style={{ transform: 'rotate(5deg)' }}
                       />
@@ -1375,7 +1663,7 @@ export default function GameArena({ gameState, myId, roomCode = '', actions, voi
                   <span className="label-micro text-white/78">Previous</span>
                 </div>
 
-                <div className="flex flex-col items-center gap-1 relative">
+                <div className="flex flex-col items-center gap-1 relative rounded-[22px] border border-[rgba(255,245,235,0.08)] bg-[rgba(255,248,239,0.04)] px-3 py-2">
                   <div className="relative">
                     <CardBack size="sm" className="opacity-85" />
                     {pileTop && (
@@ -1396,7 +1684,7 @@ export default function GameArena({ gameState, myId, roomCode = '', actions, voi
                 </div>
 
                 {jokerCard && (
-                  <div className="flex flex-col items-center gap-1 relative">
+                  <div className="flex flex-col items-center gap-1 relative rounded-[22px] border border-[rgba(255,245,235,0.08)] bg-[rgba(255,248,239,0.04)] px-3 py-2">
                     <div className="relative">
                       <PlayingCard
                         rank={jokerCard.rank}
@@ -1429,7 +1717,7 @@ export default function GameArena({ gameState, myId, roomCode = '', actions, voi
         {/* ── BOTTOM AREA (fixed) ─────────────────────────────── */}
         <div className="fixed bottom-0 left-0 right-0 z-30 flex flex-col">
           <AnimatePresence>
-            {isMyTurn && (
+            {visualIsMyTurn && (
               <motion.div
                 key="yourturn"
                 initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }}
@@ -1447,10 +1735,26 @@ export default function GameArena({ gameState, myId, roomCode = '', actions, voi
           </AnimatePresence>
 
           <div className="relative z-40 pointer-events-auto flex items-end justify-between gap-2 flex-wrap px-3 mb-1.5">
-            <div className="flex items-center gap-2 rounded-[24px] border border-[rgba(255,245,235,0.16)] bg-[rgba(40,16,24,0.46)] px-3 py-2.5 backdrop-blur-xl shadow-[0_18px_34px_rgba(23,8,19,0.18)]">
+            <div className={`flex items-center gap-2 rounded-[24px] border px-3 py-2.5 backdrop-blur-xl shadow-[0_18px_34px_rgba(23,8,19,0.18)] ${
+              visualIsMyTurn
+                ? 'border-[rgba(255,202,104,0.34)] bg-[linear-gradient(180deg,rgba(255,202,104,0.14),rgba(40,16,24,0.48))]'
+                : 'border-[rgba(255,245,235,0.16)] bg-[rgba(40,16,24,0.46)]'
+            }`}>
+              <div
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] border border-white/18 text-sm font-black text-white shadow-[0_12px_24px_rgba(23,8,19,0.18)]"
+                style={{ backgroundColor: avatarColor(myPlayer.name || 'Y') }}
+              >
+                {(myPlayer.name || 'Y')[0]?.toUpperCase?.() || 'Y'}
+              </div>
               <div>
-                <div className="text-[var(--bg-cloud)] font-semibold text-xs leading-tight">
-                  {myPlayer.name}&nbsp;<span className="text-white/40 font-semibold text-[10px]">(YOU)</span>
+                <div className="flex items-center gap-1.5 text-[var(--bg-cloud)] font-semibold text-xs leading-tight">
+                  <span>{myPlayer.name}</span>
+                  {myId === leaderPlayerId ? (
+                    <span className="flex h-4.5 w-4.5 items-center justify-center rounded-full border border-[rgba(255,202,104,0.34)] bg-[rgba(255,202,104,0.14)] text-[var(--gold)]">
+                      <IconCrown />
+                    </span>
+                  ) : null}
+                  <span className="text-white/40 font-semibold text-[10px]">(YOU)</span>
                 </div>
                 <div className="text-[var(--gold)] text-xs font-black leading-tight">
                   {isBluffMode ? `Cards: ${myCardCount}` : `Current Sum: ${myRoundSum}`}
@@ -1463,7 +1767,7 @@ export default function GameArena({ gameState, myId, roomCode = '', actions, voi
                   <IconMicOff />
                 </div>
               )}
-              {timerActive && isMyTurn && (
+              {timerActive && visualIsMyTurn && (
                 <TurnTimerBadge
                   timerPct={timerPct}
                   timerUrgent={timerUrgent}
@@ -1479,13 +1783,9 @@ export default function GameArena({ gameState, myId, roomCode = '', actions, voi
                   {actionBlockReason}
                 </div>
               )}
-              {!isMyTurn ? (
-                <div className="rounded-[20px] border border-[rgba(255,245,235,0.14)] bg-[rgba(40,16,24,0.42)] px-4 py-2 text-[10px] font-black uppercase tracking-wider text-white/46 backdrop-blur-xl">
-                  {currentTurnPlayer?.name ?? '…'}'s turn
-                </div>
-		              ) : isBluffMode ? (
+              {visualIsMyTurn && isBluffMode ? (
 	                <div className="rounded-[20px] border border-[rgba(255,245,235,0.14)] bg-[rgba(40,16,24,0.42)] px-4 py-2 text-[10px] font-black uppercase tracking-wider text-white/55 backdrop-blur-xl">
-	                  Bluff actions are on the table
+	                  Table controls
 	                </div>
 	              ) : phase === 'throw' ? (
                 <div className="flex gap-2 flex-wrap items-center justify-end">
@@ -1519,23 +1819,28 @@ export default function GameArena({ gameState, myId, roomCode = '', actions, voi
 	              ) : phase === 'pick' ? (
                 <div className="flex gap-2 flex-wrap items-center justify-end">
                   <button
-                    onClick={() => { vibrate(25); playSound('draw'); actions.pickFromDeck(); }}
-                    disabled={!canPick}
+                    onClick={onPickDeckAttempt}
+                    disabled={!canPick || !!optimisticUi?.drawPreview}
                     className={`px-4 py-2.5 font-black text-xs uppercase rounded-2xl ${
-                      canPick ? 'btn-primary-game' : 'bg-white/10 text-white/20 cursor-not-allowed'
+                      canPick && !optimisticUi?.drawPreview ? 'btn-primary-game' : 'bg-white/10 text-white/20 cursor-not-allowed'
                     }`}
                   >
                     Pick Deck
                   </button>
                   <button
-                    onClick={() => { vibrate(25); playSound('draw'); actions.pickFromPrevious(); }}
-                    disabled={!canPick || !previousOpenCard}
+                    onClick={onPickPreviousAttempt}
+                    disabled={!canPick || !previousOpenCard || !!optimisticUi?.drawPreview}
                     className={`px-4 py-2.5 font-black text-xs uppercase rounded-2xl ${
-                      canPick && previousOpenCard ? 'btn-secondary-game' : 'bg-white/10 text-white/20 cursor-not-allowed'
+                      canPick && previousOpenCard && !optimisticUi?.drawPreview ? 'btn-secondary-game' : 'bg-white/10 text-white/20 cursor-not-allowed'
                     }`}
                   >
                     Pick Previous
                   </button>
+                  {optimisticUi?.drawPreview ? (
+                    <div className="rounded-[20px] border border-[rgba(255,202,104,0.34)] bg-[rgba(255,202,104,0.12)] px-3 py-2 text-[10px] font-black uppercase tracking-wider text-yellow-100">
+                      Drawing...
+                    </div>
+                  ) : null}
                   {pendingThrown.length > 0 && (
                     <div className="rounded-[20px] border border-[rgba(255,202,104,0.34)] bg-[rgba(255,202,104,0.12)] px-3 py-2 text-[10px] font-black uppercase tracking-wider text-yellow-100">
                       Thrown: {pendingThrown.map((c) => c?.rank).filter(Boolean).join(', ')}
@@ -1565,8 +1870,41 @@ export default function GameArena({ gameState, myId, roomCode = '', actions, voi
                 }}
               >
                 <div className="mx-auto flex min-w-full w-max items-end justify-center rounded-t-[28px] border border-b-0 border-[rgba(255,245,235,0.14)] bg-[linear-gradient(180deg,rgba(40,16,24,0.42),rgba(40,16,24,0.14))] px-4 pt-3 shadow-[0_-14px_28px_rgba(23,8,19,0.14)]">
-  	              {displayCards.map((card, cardIdx) => {
-  	                const isChosen    = selectedTokens.includes(card.token);
+  	              {handVisualCards.map((card, cardIdx) => {
+  	                if (card?.preview) {
+  	                  return (
+                      <motion.div
+                        key={card.token}
+                        initial={{ opacity: 0, y: 24, scale: 0.96 }}
+                        animate={{ opacity: 1, y: -18, scale: 1 }}
+                        transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+                        style={{
+                          flexShrink: 0,
+                          position: 'relative',
+                          overflow: 'visible',
+                          marginLeft: isBluffMode && cardIdx > 0 ? -bluffOverlapPx : 0,
+                          zIndex: 20 + cardIdx,
+                        }}
+                      >
+                        {card.source === 'previous' ? (
+                          <PlayingCard
+                            rank={card.rank}
+                            suit={card.suit}
+                            size={isBluffMode ? 'compact' : 'lg'}
+                            isDisabled
+                            style={{ boxShadow: '0 16px 30px rgba(23,8,19,0.24)' }}
+                          />
+                        ) : (
+                          <CardBack
+                            size={isBluffMode ? 'lg' : 'lg'}
+                            className="opacity-95"
+                            style={{ boxShadow: '0 16px 30px rgba(23,8,19,0.24)' }}
+                          />
+                        )}
+                      </motion.div>
+                    );
+                  }
+  	              const isChosen    = selectedTokens.includes(card.token);
   	                const isJokerCard = isJokerMatch(card, jokerCard);
   	                const isMatchable = !isBluffMode && phase === 'throw' && card.rank === previousOpenCard?.rank && isMyTurn;
   	                const baseAngle = isBluffMode
@@ -1591,8 +1929,9 @@ export default function GameArena({ gameState, myId, roomCode = '', actions, voi
                         else cardNodeRefs.current.delete(card.token);
                       }}
                       data-token={card.token}
-                      animate={{ y: liftY, x: spreadX, scale: isChosen ? 1.08 : 1, rotate: baseAngle }}
-                      transition={{ type: 'spring', stiffness: 400, damping: 22 }}
+                      initial={{ opacity: 0, y: 36, rotate: baseAngle + 2 }}
+                      animate={{ opacity: 1, y: liftY, x: spreadX, scale: isChosen ? 1.08 : 1, rotate: baseAngle }}
+                      transition={{ type: 'spring', stiffness: 400, damping: 22, delay: Math.min(cardIdx * 0.018, 0.16) }}
                       onPointerDown={(event) => onCardPointerDown(card.token, event)}
                       onPointerMove={onCardPointerMove}
                       onPointerUp={onCardPointerUp}

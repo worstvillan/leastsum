@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useGame } from './hooks/useGame';
 import { Lobby, WaitingRoom } from './components/layout/PreGame';
 import GameArena from './components/layout/GameArena';
@@ -15,6 +16,11 @@ const BG = () => (
 export default function App() {
   const game   = useGame();
   const status = game.gameState?.status;
+  const theme = 'midnight';
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+  }, [theme]);
 
   // BUG FIX #6: if roomCode is cleared (host deleted room or null gameState),
   // fall through to the Lobby — no stuck "waiting" screen for non-host players.
@@ -62,6 +68,7 @@ export default function App() {
         voiceToken={game.voiceToken}
         voiceUrl={game.voiceUrl}
         voiceError={game.voiceError}
+        theme={theme}
       />
     );
   }
