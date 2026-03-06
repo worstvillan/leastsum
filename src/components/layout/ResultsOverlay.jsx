@@ -90,6 +90,7 @@ export default function ResultsOverlay({ gameState, myId, actions }) {
   const previousHistory = [...roundHistory].slice(0, -1).reverse();
 
   const title = isGameOver ? 'Final Results' : `Round ${gameState.round ?? 1} Complete`;
+  const shellClassName = 'surface-panel relative flex max-h-[92dvh] w-full flex-col overflow-y-auto p-4 sm:p-6';
 
   if (isBluffMode) {
     const finishOrder = Array.isArray(gameState?.bluffFinishOrder) ? gameState.bluffFinishOrder : [];
@@ -101,22 +102,22 @@ export default function ResultsOverlay({ gameState, myId, actions }) {
     const tableOrder = rankedIds.slice(3);
 
     return (
-      <div className="absolute inset-0 z-[100] flex items-center justify-center overflow-hidden bg-[rgba(30,9,21,0.72)] p-4 backdrop-blur-xl">
+      <div className="absolute inset-0 z-[100] flex items-start justify-center overflow-hidden bg-[rgba(30,9,21,0.72)] px-3 pb-3 pt-16 backdrop-blur-xl sm:items-center sm:p-4">
         <motion.div
           initial={{ opacity: 0, y: 20, scale: 0.98 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
-          className="surface-panel relative flex max-h-[92dvh] w-full max-w-3xl flex-col overflow-hidden p-5 sm:p-6"
+          className={`${shellClassName} max-h-[calc(100dvh-5rem)] max-w-3xl rounded-[28px] sm:max-h-[92dvh] sm:rounded-[32px]`}
         >
-          <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+          <div className="mb-4 flex flex-wrap items-start justify-between gap-3 sm:mb-5">
             <div>
               <div className="label-micro">Bluff Summary</div>
-              <h2 className="headline-display mt-2 text-4xl text-[var(--bg-cloud)]">{title}</h2>
+              <h2 className="headline-display mt-2 text-[2.25rem] text-[var(--bg-cloud)] sm:text-4xl">{title}</h2>
             </div>
             <div className="chip-host">Bluff Mode</div>
           </div>
 
-          <div className="grid flex-1 gap-4 overflow-hidden lg:grid-cols-[0.96fr_1.04fr]">
-            <div className="space-y-3">
+          <div className="grid flex-1 gap-4 overflow-visible lg:grid-cols-[0.96fr_1.04fr]">
+            <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
               {podium.map((playerId, idx) => {
                 const player = players[playerId] || {};
                 const handCount = Number(gameState?.handCounts?.[playerId] ?? gameState?.hands?.[playerId]?.length ?? 0);
@@ -133,7 +134,7 @@ export default function ResultsOverlay({ gameState, myId, actions }) {
               })}
             </div>
 
-            <div className="space-y-3 overflow-y-auto pr-1">
+            <div className="space-y-3 overflow-visible lg:overflow-y-auto lg:pr-1">
               {tableOrder.length ? <div className="label-micro mb-1">Table Order</div> : null}
               {(tableOrder.length ? tableOrder : rankedIds).map((playerId, idx) => {
                 const player = players[playerId] || {};
@@ -157,7 +158,7 @@ export default function ResultsOverlay({ gameState, myId, actions }) {
             </div>
           </div>
 
-          <button onClick={actions.playAgain} className="btn-primary-game mt-5 w-full px-5 py-4">
+          <button onClick={actions.playAgain} className="btn-primary-game mt-4 w-full px-5 py-4 sm:mt-5">
             Start New Match
           </button>
         </motion.div>
@@ -176,23 +177,23 @@ export default function ResultsOverlay({ gameState, myId, actions }) {
   const runnerUpResult = runnerUpId ? roundResults[runnerUpId] || {} : {};
 
   return (
-    <div className="absolute inset-0 z-[100] flex items-center justify-center overflow-hidden bg-[rgba(30,9,21,0.72)] p-4 backdrop-blur-xl">
+    <div className="absolute inset-0 z-[100] flex items-end justify-center overflow-hidden bg-[rgba(30,9,21,0.72)] p-3 backdrop-blur-xl sm:items-center sm:p-4">
       <motion.div
         initial={{ opacity: 0, y: 20, scale: 0.98 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
-        className="surface-panel relative flex max-h-[92dvh] w-full max-w-4xl flex-col overflow-hidden p-5 sm:p-6"
+        className={`${shellClassName} max-w-4xl rounded-[28px] sm:rounded-[32px]`}
       >
-        <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+        <div className="mb-4 flex flex-wrap items-start justify-between gap-3 sm:mb-5">
           <div>
             <div className="label-micro">{gameState.knockerFailed ? 'Penalty Resolution' : 'Round Summary'}</div>
-            <h2 className="headline-display mt-2 text-4xl text-[var(--bg-cloud)]">{title}</h2>
+            <h2 className="headline-display mt-2 text-[2.25rem] text-[var(--bg-cloud)] sm:text-4xl">{title}</h2>
           </div>
           <div className={gameState.knockerFailed ? 'chip-danger' : 'chip-host'}>
             {gameState.knockerFailed ? 'Knock Failed' : 'Scored'}
           </div>
         </div>
 
-        <div className="mb-4 grid gap-3 lg:grid-cols-3">
+        <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {leaderPlayer ? (
             <PodiumTile
               label="Leader"
@@ -217,8 +218,8 @@ export default function ResultsOverlay({ gameState, myId, actions }) {
           </div>
         </div>
 
-        <div className="grid flex-1 gap-4 overflow-hidden lg:grid-cols-[1.15fr_0.85fr]">
-          <div className="space-y-3 overflow-y-auto pr-1">
+        <div className="grid flex-1 gap-4 overflow-visible lg:grid-cols-[1.15fr_0.85fr]">
+          <div className="space-y-3 overflow-visible lg:overflow-y-auto lg:pr-1">
             {allPlayers.map(([id, player], idx) => {
               const result = roundResults[id] || {};
               const revealCards = roundReveal?.handsByPlayer?.[id];
@@ -274,7 +275,7 @@ export default function ResultsOverlay({ gameState, myId, actions }) {
             })}
           </div>
 
-          <div className="space-y-3 overflow-y-auto pr-1">
+          <div className="space-y-3 overflow-visible lg:overflow-y-auto lg:pr-1">
             <div className="surface-glass rounded-[24px] p-4">
               <div className="label-micro">Score Insight</div>
               <div className="headline-display mt-2 text-2xl text-[var(--bg-cloud)]">
@@ -295,7 +296,7 @@ export default function ResultsOverlay({ gameState, myId, actions }) {
           </div>
         </div>
 
-        <button onClick={isGameOver ? actions.playAgain : actions.nextRound} className="btn-primary-game mt-5 w-full px-5 py-4">
+        <button onClick={isGameOver ? actions.playAgain : actions.nextRound} className="btn-primary-game mt-4 w-full px-5 py-4 sm:mt-5">
           {isGameOver ? 'Start New Match' : 'Begin Next Round'}
         </button>
       </motion.div>

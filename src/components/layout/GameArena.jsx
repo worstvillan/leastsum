@@ -44,6 +44,19 @@ const IconCrown = () => (
     <path d="M5 18h14l1-9-5.5 3-2.5-6-2.5 6L4 9l1 9z" />
   </svg>
 );
+const IconMenu = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+    <path d="M4 7h16" />
+    <path d="M4 12h16" />
+    <path d="M4 17h16" />
+  </svg>
+);
+const IconClose = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+    <path d="M6 6l12 12" />
+    <path d="M18 6L6 18" />
+  </svg>
+);
 const IconChevronLeft = () => (
   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
     <path d="M15 18l-6-6 6-6" />
@@ -173,6 +186,7 @@ function MyVoiceButton() {
 
   return (
     <button
+      type="button"
       onClick={() => localParticipant?.setMicrophoneEnabled(isMuted)}
       className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 border-2 transition-all ${
         isMuted
@@ -181,7 +195,7 @@ function MyVoiceButton() {
             ? 'bg-green-400/50 border-green-400 text-white'
             : 'bg-white/18 border-white/40 text-white hover:bg-white/30'
       }`}
-      style={{ animation: isSpeaking && !isMuted ? 'pulsemic 1.2s ease infinite' : 'none' }}
+      style={{ touchAction: 'manipulation', animation: isSpeaking && !isMuted ? 'pulsemic 1.2s ease infinite' : 'none' }}
     >
       {isMuted ? <IconMicOff /> : <IconMic />}
     </button>
@@ -284,7 +298,7 @@ function OpponentSeat({
   );
 }
 
-function MaskedCardStack({ count = 0, isActive = false, label = '', playerName = '' }) {
+function MaskedCardStack({ count = 0, isActive = false, label = '', playerName = '', compact = false }) {
   const reduceMotion = useReducedMotion();
   const prevCountRef = useRef(count);
   const [bumpTick, setBumpTick] = useState(0);
@@ -301,13 +315,13 @@ function MaskedCardStack({ count = 0, isActive = false, label = '', playerName =
   const fanSpread = Math.min(48, visibleCards * 9);
 
   return (
-    <div className="flex min-w-[104px] flex-col items-center gap-1.5">
+    <div className={`flex flex-col items-center ${compact ? 'min-w-[82px] gap-1' : 'min-w-[104px] gap-1.5'}`}>
       <motion.div
         key={`${label}-${playerName}-${bumpTick}`}
         initial={reduceMotion ? { opacity: 0.92 } : { y: 0, scale: 1 }}
         animate={reduceMotion ? { opacity: 1 } : { y: [0, -6, 0], scale: [1, 1.04, 1] }}
         transition={{ duration: reduceMotion ? 0.18 : 0.22, ease: 'easeOut' }}
-        className="relative h-[86px] w-[104px] overflow-visible"
+        className={`relative overflow-visible ${compact ? 'h-[66px] w-[82px]' : 'h-[86px] w-[104px]'}`}
       >
         <motion.div
           animate={isActive && !reduceMotion ? { scale: [1, 1.02, 1] } : { scale: 1 }}
@@ -326,19 +340,23 @@ function MaskedCardStack({ count = 0, isActive = false, label = '', playerName =
             );
           })}
         </motion.div>
-        <div className="absolute right-2 top-1 z-20 flex h-6 min-w-[24px] items-center justify-center rounded-full border-2 border-white bg-yellow-300 px-1.5 text-[10px] font-black leading-[1] text-black shadow-[0_10px_20px_rgba(33,12,22,0.28)]">
+        <div className={`absolute z-20 flex items-center justify-center rounded-full border-2 border-white bg-yellow-300 text-black shadow-[0_10px_20px_rgba(33,12,22,0.28)] ${
+          compact ? 'right-1 top-0.5 h-5 min-w-[20px] px-1 text-[9px] font-black leading-none' : 'right-2 top-1 h-6 min-w-[24px] px-1.5 text-[10px] font-black leading-[1]'
+        }`}>
           {count}
         </div>
         {overflow > 0 && (
-          <div className="absolute left-1 top-1 rounded-full border border-cyan-200/50 bg-black/70 px-1.5 py-0.5 text-[9px] font-black leading-none text-cyan-100">
+          <div className={`absolute rounded-full border border-cyan-200/50 bg-black/70 font-black leading-none text-cyan-100 ${
+            compact ? 'left-0.5 top-0.5 px-1 py-0.5 text-[8px]' : 'left-1 top-1 px-1.5 py-0.5 text-[9px]'
+          }`}>
             +{overflow}
           </div>
         )}
       </motion.div>
       <div className="text-center leading-tight">
-        <div className="text-[9px] font-black uppercase tracking-[0.1em] text-white/80">{label}</div>
+        <div className={`${compact ? 'text-[8px] tracking-[0.08em]' : 'text-[9px] tracking-[0.1em]'} font-black uppercase text-white/80`}>{label}</div>
         {playerName && (
-          <div className="text-[10px] font-black text-cyan-100 truncate max-w-[96px]" title={playerName}>
+          <div className={`${compact ? 'max-w-[78px] text-[9px]' : 'max-w-[96px] text-[10px]'} truncate font-black text-cyan-100`} title={playerName}>
             {playerName}
           </div>
         )}
@@ -349,11 +367,11 @@ function MaskedCardStack({ count = 0, isActive = false, label = '', playerName =
 
 // ── Opponent fixed-slot positions ─────────────────────────────
 function getOppSlots(n) {
-  const east = { style: { top: '40%', right: '3%', transform: 'translateY(-50%)' }, fan: -90 };
-  const west = { style: { top: '40%', left: '3%', transform: 'translateY(-50%)' }, fan: 90 };
-  const north = { style: { top: '8vh', left: '50%', transform: 'translateX(-50%)' }, fan: 0 };
-  const northEast = { style: { top: '10vh', left: '72%', transform: 'translateX(-50%)' }, fan: -25 };
-  const northWest = { style: { top: '10vh', left: '28%', transform: 'translateX(-50%)' }, fan: 25 };
+  const east = { style: { top: '41%', right: '3%', transform: 'translateY(-50%)' }, fan: -90 };
+  const west = { style: { top: '41%', left: '3%', transform: 'translateY(-50%)' }, fan: 90 };
+  const north = { style: { top: '9.4rem', left: '50%', transform: 'translateX(-50%)' }, fan: 0 };
+  const northEast = { style: { top: '8.2rem', left: '72%', transform: 'translateX(-50%)' }, fan: -25 };
+  const northWest = { style: { top: '8.2rem', left: '28%', transform: 'translateX(-50%)' }, fan: 25 };
   const southWest = { style: { top: '66%', left: '8%', transform: 'translateY(-50%)' }, fan: 78 };
   const southEast = { style: { top: '66%', right: '8%', transform: 'translateY(-50%)' }, fan: -78 };
 
@@ -480,6 +498,8 @@ export default function GameArena({
   const [throwFxCards,    setThrowFxCards]    = useState([]);
   const [pendingHiddenTokens, setPendingHiddenTokens] = useState([]);
   const [optimisticUi,    setOptimisticUi]    = useState(null);
+  const [viewportWidth,   setViewportWidth]   = useState(() => (typeof window !== 'undefined' ? window.innerWidth : 1280));
+  const [infoDrawerOpen,  setInfoDrawerOpen]  = useState(false);
   const [handScrollState, setHandScrollState] = useState({
     canLeft: false,
     canRight: false,
@@ -606,6 +626,7 @@ export default function GameArena({
       : `${visualCurrentTurnPlayer?.name ?? 'Player'} turn`);
 
   const ringOrder = allPlayersSorted.map(([id]) => id);
+  const liveSeatOrder = effectiveTurnOrder.length > 0 ? effectiveTurnOrder : ringOrder;
   const leaderPlayerId = (() => {
     if (isBluffMode) {
       const finishOrder = Array.isArray(gameState?.bluffFinishOrder) ? gameState.bluffFinishOrder : [];
@@ -627,10 +648,10 @@ export default function GameArena({
         return Number(a[1]?.order ?? 0) - Number(b[1]?.order ?? 0);
       })[0]?.[0] ?? null;
   })();
-  const myRingIdx = ringOrder.indexOf(myId);
+  const myRingIdx = liveSeatOrder.indexOf(myId);
   const orderedOpponentIds = myRingIdx >= 0
-    ? [...ringOrder.slice(myRingIdx + 1), ...ringOrder.slice(0, myRingIdx)]
-    : ringOrder.filter((id) => id !== myId);
+    ? [...liveSeatOrder.slice(myRingIdx + 1), ...liveSeatOrder.slice(0, myRingIdx)]
+    : liveSeatOrder.filter((id) => id !== myId);
   const opponents = orderedOpponentIds
     .filter((id) => id !== myId)
     .map((id) => [id, gameState?.players?.[id]])
@@ -659,12 +680,29 @@ export default function GameArena({
   const handVisualCards = optimisticUi?.drawPreview
     ? [...displayCards, { token: '__draw_preview__', preview: true, source: optimisticUi.drawPreview.source, rank: optimisticUi.drawPreview.rank, suit: optimisticUi.drawPreview.suit }]
     : displayCards;
+  const isCompactLayout = viewportWidth < 1024;
+  const isPhoneLayout = viewportWidth < 640;
   const bluffOverlapPx = isBluffMode
     ? (displayCards.length > 18 ? 10 : displayCards.length > 12 ? 8 : 6)
     : 0;
   const handLiftReservePx = isBluffMode ? 90 : 72;
-  const showHandScrollButtons = !usePixiRenderer && isBluffMode && handScrollState.hasMeaningfulOverflow;
-  const isBluffHandScrollable = isBluffMode && handScrollState.hasMeaningfulOverflow;
+  const showDesktopChrome = !isCompactLayout;
+  const showFloatingOpponents = !isCompactLayout;
+  const tableIslandWidth = isPhoneLayout ? Math.min(336, Math.max(292, viewportWidth - 20)) : isCompactLayout ? 360 : 380;
+  const tableIslandHeight = isPhoneLayout ? 214 : isCompactLayout ? 230 : 248;
+  const isLeastSumPhoneLayout = isPhoneLayout && !isBluffMode;
+  const isBluffCompactLayout = isBluffMode && isCompactLayout;
+  const bluffHandCardWidthPx = isBluffCompactLayout ? 64 : BLUFF_HAND_CARD_WIDTH_PX;
+  const bluffHandCardSize = isBluffCompactLayout ? 'miniCompact' : 'compact';
+  const leastSumTableTop = isLeastSumPhoneLayout ? '45%' : '50%';
+  const leastSumTableTranslateY = isLeastSumPhoneLayout ? '-48%' : (isPhoneLayout ? '-38%' : '-42%');
+  const handOverflowThresholdPx = isBluffCompactLayout ? 2 : BLUFF_HAND_MEANINGFUL_OVERFLOW_PX;
+  const handTopReservePx = isBluffCompactLayout ? 0 : handLiftReservePx;
+  const shouldForceCompactBluffArrows = isBluffCompactLayout && displayCards.length > 5;
+  const showHandScrollButtons = !usePixiRenderer && (handScrollState.hasMeaningfulOverflow || shouldForceCompactBluffArrows);
+  const isHandScrollable = handScrollState.hasMeaningfulOverflow || shouldForceCompactBluffArrows;
+  const canScrollHandLeft = handScrollState.canLeft;
+  const canScrollHandRight = handScrollState.canRight || shouldForceCompactBluffArrows;
 
   useEffect(() => {
     handEntriesRef.current = handEntries;
@@ -708,6 +746,16 @@ export default function GameArena({
     }
     prevIsMyTurnRef.current = isMyTurn;
   }, [isMyTurn, handEntries, isBluffMode, jokerCard]);
+  useEffect(() => {
+    const onResize = () => setViewportWidth(window.innerWidth);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+  useEffect(() => {
+    if (!isCompactLayout && infoDrawerOpen) {
+      setInfoDrawerOpen(false);
+    }
+  }, [isCompactLayout, infoDrawerOpen]);
 
   useEffect(() => { setSelectedTokens([]); }, [phase, currentTurnId]);
 
@@ -793,12 +841,27 @@ export default function GameArena({
     const viewportWidth = Math.max(0, container.clientWidth);
     const trackWidth = Math.max(0, track.scrollWidth);
     const maxScrollLeft = Math.max(0, trackWidth - viewportWidth);
-    const stepPx = Math.max(1, BLUFF_HAND_CARD_WIDTH_PX - bluffOverlapPx);
+    const trackChildren = Array.from(track.children || []).filter(Boolean);
+    const stepPx = (() => {
+      if (isBluffMode) {
+        return Math.max(1, bluffHandCardWidthPx - bluffOverlapPx);
+      }
+      if (trackChildren.length >= 2) {
+        const first = trackChildren[0];
+        const second = trackChildren[1];
+        const measuredGap = Math.abs((second.offsetLeft || 0) - (first.offsetLeft || 0));
+        if (measuredGap > 0) return measuredGap;
+      }
+      if (trackChildren.length >= 1) {
+        return Math.max(1, trackChildren[0].offsetWidth || 96);
+      }
+      return 96;
+    })();
     const jumpCards = Math.max(1, Math.floor(viewportWidth / stepPx) - 1);
     const jumpPx = Math.max(stepPx, jumpCards * stepPx);
     let scrollLeft = clamp(Math.max(0, container.scrollLeft), 0, maxScrollLeft);
-    const hasMeaningfulOverflow = isBluffMode && maxScrollLeft >= BLUFF_HAND_MEANINGFUL_OVERFLOW_PX;
-    if (isBluffMode && !hasMeaningfulOverflow) scrollLeft = 0;
+    const hasMeaningfulOverflow = maxScrollLeft >= handOverflowThresholdPx;
+    if (!hasMeaningfulOverflow) scrollLeft = 0;
 
     return {
       container,
@@ -1008,7 +1071,7 @@ export default function GameArena({
     if (usePixiRenderer) return undefined;
     const rafId = requestAnimationFrame(() => syncHandScrollState());
     return () => cancelAnimationFrame(rafId);
-  }, [usePixiRenderer, isBluffHandScrollable, showHandScrollButtons]);
+  }, [usePixiRenderer, isHandScrollable, showHandScrollButtons]);
 
   const beginDrag = (eventOrPoint) => {
     const interaction = interactionRef.current;
@@ -1387,34 +1450,42 @@ export default function GameArena({
   const resolvePlayerName = (id) => gameState?.players?.[id]?.name || 'Player';
 
   const bluffTableControls = (
-    <div className="relative w-[94vw] max-w-[860px] px-4 py-4">
-      <div className="absolute inset-0 rounded-[36px] border border-[rgba(255,240,224,0.16)] bg-[linear-gradient(145deg,rgba(255,255,255,0.1),rgba(255,255,255,0.02)),linear-gradient(145deg,rgba(58,18,36,0.9),rgba(32,14,28,0.88))] shadow-[0_24px_54px_rgba(23,8,19,0.28)] backdrop-blur-xl" />
-      <div className="absolute -top-3 left-1/2 -translate-x-1/2 h-8 w-[72%] rounded-full bg-[rgba(255,255,255,0.12)] blur-md pointer-events-none" />
+    <div className={`relative ${isBluffCompactLayout ? 'w-[90vw] max-w-[344px] max-h-[calc(100dvh-13rem)] overflow-y-auto px-2 py-2' : 'w-[94vw] max-w-[860px] px-4 py-4'}`}>
+      <div className={`absolute inset-0 border border-[rgba(255,240,224,0.16)] bg-[linear-gradient(145deg,rgba(255,255,255,0.1),rgba(255,255,255,0.02)),linear-gradient(145deg,rgba(58,18,36,0.9),rgba(32,14,28,0.88))] shadow-[0_24px_54px_rgba(23,8,19,0.28)] backdrop-blur-xl ${isBluffCompactLayout ? 'rounded-[28px]' : 'rounded-[36px]'}`} />
+      <div className={`absolute left-1/2 -translate-x-1/2 rounded-full bg-[rgba(255,255,255,0.12)] blur-md pointer-events-none ${isBluffCompactLayout ? '-top-2 h-6 w-[60%]' : '-top-3 h-8 w-[72%]'}`} />
       <div className="relative z-10">
-        <div className="mb-3 rounded-2xl border border-[rgba(255,202,104,0.26)] bg-[linear-gradient(90deg,rgba(255,202,104,0.12),rgba(140,234,214,0.12))] px-4 py-2 text-center text-[10px] font-black uppercase tracking-[0.18em] text-white/90">
-          {isMyTurn ? 'Your turn to bluff' : `${currentTurnPlayer?.name ?? '…'} is playing`}
-        </div>
+        {!isBluffCompactLayout ? (
+          <div className="mb-3 rounded-2xl border border-[rgba(255,202,104,0.26)] bg-[linear-gradient(90deg,rgba(255,202,104,0.12),rgba(140,234,214,0.12))] px-4 py-2 text-center text-[10px] font-black uppercase tracking-[0.18em] text-white/90">
+            {isMyTurn ? 'Your turn to bluff' : `${currentTurnPlayer?.name ?? '…'} is playing`}
+          </div>
+        ) : null}
 
-        <div className="flex flex-wrap items-center justify-center gap-2">
+        <div className={`flex flex-wrap items-center justify-center ${isBluffCompactLayout ? 'gap-1' : 'gap-2'}`}>
           {!activeBluffRank ? (
             <select
               value={declaredRank}
               onChange={(e) => setDeclaredRank(e.target.value)}
-              className="rounded-2xl border border-[rgba(255,245,235,0.18)] bg-[rgba(255,248,239,0.08)] px-3 py-2 text-xs font-black uppercase tracking-wider text-[var(--bg-cloud)] shadow-[0_10px_18px_rgba(23,8,19,0.14)] focus:outline-none focus:ring-2 focus:ring-[rgba(140,234,214,0.45)]"
+              className={`rounded-2xl border border-[rgba(255,245,235,0.18)] bg-[rgba(255,248,239,0.08)] text-[var(--bg-cloud)] shadow-[0_10px_18px_rgba(23,8,19,0.14)] focus:outline-none focus:ring-2 focus:ring-[rgba(140,234,214,0.45)] ${
+                isBluffCompactLayout ? 'px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.08em]' : 'px-3 py-2 text-xs font-black uppercase tracking-wider'
+              }`}
             >
               {['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'].map((rank) => (
                 <option key={rank} value={rank} className="bg-slate-900 text-white">{rank}</option>
               ))}
             </select>
           ) : (
-            <div className="rounded-2xl border border-[rgba(255,245,235,0.18)] bg-[rgba(255,248,239,0.08)] px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-[var(--mint)]">
+            <div className={`rounded-2xl border border-[rgba(255,245,235,0.18)] bg-[rgba(255,248,239,0.08)] uppercase text-[var(--mint)] ${
+              isBluffCompactLayout ? 'px-2 py-1 text-[9px] font-semibold tracking-[0.08em]' : 'px-3 py-2 text-[10px] font-black tracking-[0.12em]'
+            }`}>
               Active rank: {activeBluffRank}
             </div>
           )}
           <button
             onClick={onBluffPlayAttempt}
             disabled={!canBluffPlay}
-            className={`px-4 py-2 font-black text-xs uppercase rounded-2xl ${
+            className={`uppercase rounded-2xl ${
+              isBluffCompactLayout ? 'px-2.5 py-1 text-[9px] font-semibold tracking-[0.08em]' : 'px-4 py-2 text-xs font-black'
+            } ${
               canBluffPlay
                 ? 'btn-primary-game'
                 : 'bg-white/10 text-white/20 cursor-not-allowed'
@@ -1425,7 +1496,9 @@ export default function GameArena({
           <button
             onClick={onBluffPassAttempt}
             disabled={!canBluffPass}
-            className={`px-3 py-2 font-black text-xs uppercase rounded-2xl ${
+            className={`uppercase rounded-2xl ${
+              isBluffCompactLayout ? 'px-2.5 py-1 text-[9px] font-semibold tracking-[0.08em]' : 'px-3 py-2 text-xs font-black'
+            } ${
               canBluffPass
                 ? 'btn-secondary-game'
                 : 'bg-white/10 text-white/20 cursor-not-allowed'
@@ -1436,7 +1509,9 @@ export default function GameArena({
           <button
             onClick={onBluffObjectionAttempt}
             disabled={!canBluffObjection}
-            className={`px-3 py-2 font-black text-xs uppercase rounded-2xl ${
+            className={`uppercase rounded-2xl ${
+              isBluffCompactLayout ? 'px-2.5 py-1 text-[9px] font-semibold tracking-[0.08em]' : 'px-3 py-2 text-xs font-black'
+            } ${
               canBluffObjection
                 ? 'btn-danger-game'
                 : 'bg-white/10 text-white/20 cursor-not-allowed'
@@ -1446,45 +1521,54 @@ export default function GameArena({
           </button>
         </div>
 
-        <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+        <div className={`mt-2 flex flex-wrap items-center justify-center ${isBluffCompactLayout ? 'gap-1' : 'gap-2'}`}>
           {activeBluffClaim ? (
-            <div className="px-2.5 py-1.5 bg-black/26 border border-emerald-200/30 rounded-full text-emerald-50 text-[10px] font-black uppercase tracking-[0.1em]">
+            <div className={`rounded-full border border-emerald-200/30 bg-black/26 uppercase text-emerald-50 ${
+              isBluffCompactLayout ? 'px-2 py-1 text-[9px] font-semibold tracking-[0.08em]' : 'px-2.5 py-1.5 text-[10px] font-black tracking-[0.1em]'
+            }`}>
               {resolvePlayerName(activeBluffClaim?.claimerId)} · {activeBluffClaim?.cardCount || 0} x {activeBluffClaim?.declaredRank || '?'} · Pass {activeBluffClaim?.passCount || 0}
             </div>
           ) : (
-            <div className="px-2.5 py-1.5 bg-black/25 border border-white/15 rounded-full text-white/65 text-[10px] font-black uppercase tracking-[0.1em]">
+            <div className={`rounded-full border border-white/15 bg-black/25 uppercase text-white/65 ${
+              isBluffCompactLayout ? 'px-2 py-1 text-[9px] font-semibold tracking-[0.08em]' : 'px-2.5 py-1.5 text-[10px] font-black tracking-[0.1em]'
+            }`}>
               No active claim
             </div>
           )}
-          <div className="px-2.5 py-1.5 bg-black/26 border border-cyan-200/25 rounded-full text-cyan-50/95 text-[10px] font-black uppercase tracking-[0.1em]">
+          <div className={`rounded-full border border-cyan-200/25 bg-black/26 uppercase text-cyan-50/95 ${
+            isBluffCompactLayout ? 'px-2 py-1 text-[9px] font-semibold tracking-[0.08em]' : 'px-2.5 py-1.5 text-[10px] font-black tracking-[0.1em]'
+          }`}>
             Live {Number(bluffLiveRisk?.totalCards || 0)}
           </div>
           {bluffReveal && (
-            <div className="px-2.5 py-1.5 bg-yellow-300/16 border border-yellow-200/40 rounded-full text-yellow-100 text-[10px] font-black uppercase tracking-[0.1em]">
+            <div className={`rounded-full border border-yellow-200/40 bg-yellow-300/16 uppercase text-yellow-100 ${
+              isBluffCompactLayout ? 'px-2 py-1 text-[9px] font-semibold tracking-[0.08em]' : 'px-2.5 py-1.5 text-[10px] font-black tracking-[0.1em]'
+            }`}>
               Last: {bluffReveal.truthful ? 'Truthful' : 'Bluff'} · {resolvePlayerName(bluffReveal?.loserId)} loses
             </div>
           )}
         </div>
 
-        <div className="mt-3 grid gap-2 md:grid-cols-2">
-          <div className="rounded-2xl border border-white/20 bg-black/22 p-2">
-            <div className="mb-2 text-[10px] font-black uppercase tracking-[0.14em] text-cyan-100/90">
+        <div className={`mt-2 grid ${isBluffCompactLayout ? 'gap-1.5' : 'gap-2'} md:grid-cols-2`}>
+          <div className={`rounded-2xl border border-white/20 bg-black/22 ${isBluffCompactLayout ? 'p-1.5' : 'p-2'}`}>
+            <div className={`mb-2 uppercase text-cyan-100/90 ${isBluffCompactLayout ? 'text-[9px] font-semibold tracking-[0.1em]' : 'text-[10px] font-black tracking-[0.14em]'}`}>
               Live risk (masked cards)
             </div>
             {Number(bluffLiveRisk?.totalCards || 0) > 0 ? (
-              <div className="space-y-2">
+              <div className={isBluffCompactLayout ? 'space-y-1.5' : 'space-y-2'}>
                 <div className="flex items-end justify-center">
                   <MaskedCardStack
                     count={Number(bluffLiveRisk?.totalCards || 0)}
                     isActive={!!activeBluffClaim}
                     label="Live Total"
+                    compact={isBluffCompactLayout}
                   />
                 </div>
-                <div className="text-[9px] font-black uppercase tracking-[0.12em] text-white/60 text-center">
+                <div className={`text-center uppercase text-white/60 ${isBluffCompactLayout ? 'text-[8px] font-semibold tracking-[0.08em]' : 'text-[9px] font-black tracking-[0.12em]'}`}>
                   Cards by player
                 </div>
-                <div className="overflow-x-auto overflow-y-visible px-1 py-2 [scrollbar-width:thin]">
-                  <div className="flex min-w-full w-max items-end justify-center gap-3">
+                <div className="overflow-x-auto overflow-y-visible px-1 py-1.5 [scrollbar-width:none]">
+                  <div className={`flex min-w-full w-max items-end justify-center ${isBluffCompactLayout ? 'gap-2' : 'gap-3'}`}>
                     {bluffRiskByPlayer.map((entry) => (
                       <MaskedCardStack
                         key={`risk-${entry.playerId}`}
@@ -1492,6 +1576,7 @@ export default function GameArena({
                         isActive={activeBluffClaim?.claimerId === entry?.playerId}
                         label="By"
                         playerName={resolvePlayerName(entry?.playerId)}
+                        compact={isBluffCompactLayout}
                       />
                     ))}
                   </div>
@@ -1502,16 +1587,18 @@ export default function GameArena({
             )}
           </div>
 
-          <div className="rounded-2xl border border-white/20 bg-black/22 p-2">
-            <div className="mb-2 text-[10px] font-black uppercase tracking-[0.14em] text-emerald-100/90">
+          <div className={`rounded-2xl border border-white/20 bg-black/22 ${isBluffCompactLayout ? 'p-1.5' : 'p-2'}`}>
+            <div className={`mb-2 uppercase text-emerald-100/90 ${isBluffCompactLayout ? 'text-[9px] font-semibold tracking-[0.1em]' : 'text-[10px] font-black tracking-[0.14em]'}`}>
               Current chain history
             </div>
             {bluffHistory.length ? (
-              <div className="max-h-28 overflow-y-auto pr-1 space-y-1">
+              <div className={`overflow-y-auto pr-1 ${isBluffCompactLayout ? 'max-h-16 space-y-1' : 'max-h-28 space-y-1'}`}>
                 {bluffHistory.map((entry, idx) => (
                   <div
                     key={`${entry?.type || 'event'}-${Number(entry?.at || 0)}-${idx}`}
-                    className={`px-2 py-1 rounded-xl border text-[10px] font-black tracking-wide ${
+                    className={`rounded-xl border ${
+                      isBluffCompactLayout ? 'px-2 py-1 text-[9px] font-semibold tracking-[0.06em]' : 'px-2 py-1 text-[10px] font-black tracking-wide'
+                    } ${
                       idx === 0
                         ? 'border-yellow-300/70 bg-yellow-400/18 text-yellow-50 shadow-[0_0_0_1px_rgba(251,191,36,0.35),0_6px_14px_rgba(0,0,0,0.26)]'
                         : 'border-white/15 bg-black/24 text-white/85'
@@ -1533,7 +1620,7 @@ export default function GameArena({
         </div>
 
         {bluffReveal?.cards?.length > 0 && (
-          <div className="mt-3 rounded-2xl border border-yellow-200/40 bg-yellow-300/10 p-2">
+          <div className={`rounded-2xl border border-yellow-200/40 bg-yellow-300/10 ${isBluffCompactLayout ? 'mt-2 p-1.5' : 'mt-3 p-2'}`}>
             <div className="mb-2 text-[10px] font-black uppercase tracking-[0.14em] text-yellow-100/90">
               Objection reveal ({bluffReveal.truthful ? 'truthful claim' : 'bluff caught'})
             </div>
@@ -1552,10 +1639,81 @@ export default function GameArena({
         )}
 
         {actionWarning && (
-          <div className="mt-3 px-3 py-2 bg-red-500/22 border border-red-200/50 rounded-2xl text-red-100 text-[10px] font-black uppercase tracking-[0.11em] text-center">
+          <div className={`border border-red-200/50 bg-red-500/22 rounded-2xl text-red-100 uppercase text-center ${isBluffCompactLayout ? 'mt-2 px-2.5 py-1.5 text-[9px] font-semibold tracking-[0.08em]' : 'mt-3 px-3 py-2 text-[10px] font-black tracking-[0.11em]'}`}>
             {actionWarning}
           </div>
         )}
+
+        {isBluffCompactLayout ? (
+          <div className="mt-2 flex items-center gap-2 rounded-[22px] border border-[rgba(255,202,104,0.24)] bg-[linear-gradient(180deg,rgba(255,202,104,0.12),rgba(40,16,24,0.38))] px-3 py-2 shadow-[0_16px_30px_rgba(23,8,19,0.2)]">
+            <div
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] border border-white/18 text-sm font-black text-white shadow-[0_12px_24px_rgba(23,8,19,0.18)]"
+              style={{ backgroundColor: avatarColor(myPlayer.name || 'Y') }}
+            >
+              {(myPlayer.name || 'Y')[0]?.toUpperCase?.() || 'Y'}
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 text-[11px] font-semibold leading-tight text-[var(--bg-cloud)]">
+                <span className="truncate">{myPlayer.name}</span>
+                <span className="rounded-full border border-[rgba(255,202,104,0.28)] bg-[rgba(255,202,104,0.14)] px-2 py-0.5 text-[8px] font-semibold uppercase tracking-[0.08em] text-[var(--gold)]">
+                  {visualIsMyTurn ? 'Your turn' : 'Waiting'}
+                </span>
+              </div>
+              <div className="mt-0.5 text-[11px] font-semibold leading-tight text-[var(--mint)]">
+                Cards: {myCardCount}
+              </div>
+            </div>
+            {hasVoice ? (
+              <MyVoiceButton />
+            ) : (
+              <div className="flex h-9 w-9 items-center justify-center rounded-full border-2 border-white/20 bg-[rgba(40,16,24,0.42)] text-white/45">
+                <IconMicOff />
+              </div>
+            )}
+            {timerActive && visualIsMyTurn ? (
+              <TurnTimerBadge
+                timerPct={timerPct}
+                timerUrgent={timerUrgent}
+                remainingSec={remainingSec}
+                sizeClass="w-9 h-9"
+              />
+            ) : null}
+          </div>
+        ) : null}
+
+        {isBluffCompactLayout && showHandScrollButtons ? (
+          <div className="mt-2 flex items-center justify-between rounded-[18px] border border-[rgba(255,245,235,0.12)] bg-[rgba(40,16,24,0.34)] px-2 py-1.5 shadow-[0_12px_24px_rgba(23,8,19,0.16)]">
+            <button
+              type="button"
+              onClick={() => scrollHandStripBy(-1)}
+              disabled={!canScrollHandLeft}
+              className={`flex h-8 w-8 items-center justify-center rounded-full border transition ${
+                canScrollHandLeft
+                  ? 'border-[rgba(255,202,104,0.42)] bg-[rgba(40,16,24,0.56)] text-[var(--gold)] shadow-[0_12px_24px_rgba(23,8,19,0.18)]'
+                  : 'border-white/10 bg-white/5 text-white/25 cursor-not-allowed'
+              }`}
+              aria-label="Scroll cards left"
+            >
+              <IconChevronLeft />
+            </button>
+            <div className="px-2 text-[8px] font-semibold uppercase tracking-[0.12em] text-white/50">
+              Hand
+            </div>
+            <button
+              type="button"
+              onClick={() => scrollHandStripBy(1)}
+              disabled={!canScrollHandRight}
+              className={`flex h-8 w-8 items-center justify-center rounded-full border transition ${
+                canScrollHandRight
+                  ? 'border-[rgba(255,202,104,0.42)] bg-[rgba(40,16,24,0.56)] text-[var(--gold)] shadow-[0_12px_24px_rgba(23,8,19,0.18)]'
+                  : 'border-white/10 bg-white/5 text-white/25 cursor-not-allowed'
+              }`}
+              aria-label="Scroll cards right"
+            >
+              <IconChevronRight />
+            </button>
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -1654,27 +1812,119 @@ export default function GameArena({
         )}
 
         <div
-          className="fixed left-1/2 top-3 z-40 whitespace-nowrap rounded-full border border-[rgba(255,245,235,0.16)] bg-[rgba(40,16,24,0.42)] px-5 py-2 backdrop-blur-xl -translate-x-1/2"
-          style={{ fontFamily:'var(--font-display)', fontSize:16, color:'var(--bg-cloud)', letterSpacing:2 }}
+          className="fixed left-1/2 top-3 z-40 max-w-[calc(100vw-6rem)] whitespace-nowrap rounded-full border border-[rgba(255,245,235,0.16)] bg-[rgba(40,16,24,0.42)] px-4 py-2 backdrop-blur-xl -translate-x-1/2"
+          style={{ fontFamily:'var(--font-display)', fontSize: isPhoneLayout ? 14 : 16, color:'var(--bg-cloud)', letterSpacing: isPhoneLayout ? 1.2 : 2 }}
         >
           {resolvedRoomCode} · RD {gameState.round ?? 1}
         </div>
 
-        <div className="fixed left-1/2 top-[3.65rem] z-40 -translate-x-1/2 flex items-center gap-2">
+        <div className={`fixed left-1/2 z-40 flex max-w-[calc(100vw-1.5rem)] -translate-x-1/2 items-center gap-2 ${isCompactLayout ? 'top-[3.35rem] flex-col' : 'top-[3.65rem] flex-row'}`}>
           <div className="rounded-full border border-[rgba(255,245,235,0.14)] bg-[rgba(40,16,24,0.42)] px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.18em] text-[var(--gold)] backdrop-blur-xl">
             {phaseLabelText}
           </div>
-          <div className="rounded-full border border-[rgba(255,245,235,0.14)] bg-[rgba(40,16,24,0.38)] px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/76 backdrop-blur-xl">
+          <div className={`rounded-full border border-[rgba(255,245,235,0.14)] bg-[rgba(40,16,24,0.38)] px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/76 backdrop-blur-xl ${isCompactLayout ? 'max-w-[calc(100vw-2rem)] text-center' : ''}`}>
             {stageStatus}
           </div>
         </div>
 
         {!hasVoice && (
-          <div className="fixed left-1/2 top-[5.8rem] z-40 whitespace-nowrap rounded-full border border-[rgba(255,245,235,0.16)] bg-[rgba(40,16,24,0.46)] px-3 py-1 text-[10px] font-black uppercase tracking-wide text-white/80 backdrop-blur-xl -translate-x-1/2">
+          <div className={`fixed left-1/2 z-40 max-w-[calc(100vw-1.5rem)] whitespace-nowrap rounded-full border border-[rgba(255,245,235,0.16)] bg-[rgba(40,16,24,0.46)] px-3 py-1 text-[10px] font-black uppercase tracking-wide text-white/80 backdrop-blur-xl -translate-x-1/2 ${isCompactLayout ? 'top-[7rem]' : 'top-[5.8rem]'}`}>
             {voiceError || 'Voice unavailable. Game continues normally.'}
           </div>
         )}
 
+        {isCompactLayout ? (
+          <>
+            <button
+              type="button"
+              onClick={() => setInfoDrawerOpen((prev) => !prev)}
+              className="fixed left-3 top-3 z-50 flex h-11 w-11 items-center justify-center rounded-[18px] border border-[rgba(255,245,235,0.18)] bg-[rgba(40,16,24,0.52)] text-[var(--bg-cloud)] backdrop-blur-xl shadow-[0_18px_34px_rgba(23,8,19,0.18)]"
+              aria-label={infoDrawerOpen ? 'Close game info' : 'Open game info'}
+            >
+              {infoDrawerOpen ? <IconClose /> : <IconMenu />}
+            </button>
+            <AnimatePresence>
+              {infoDrawerOpen && (
+                <>
+                  <motion.button
+                    type="button"
+                    key="info-drawer-backdrop"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.16 }}
+                    onClick={() => setInfoDrawerOpen(false)}
+                    className="fixed inset-0 z-40 bg-[rgba(10,4,8,0.26)] backdrop-blur-[1px]"
+                    aria-label="Close game info"
+                  />
+                  <motion.div
+                    key="info-drawer"
+                    initial={{ opacity: 0, x: -18 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -18 }}
+                    transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+                    className="fixed left-3 top-[3.8rem] z-50 max-h-[calc(100dvh-5rem)] w-[min(86vw,340px)] overflow-y-auto rounded-[26px] border border-[rgba(255,245,235,0.16)] bg-[rgba(40,16,24,0.72)] p-3 backdrop-blur-xl shadow-[0_24px_44px_rgba(23,8,19,0.26)]"
+                  >
+                    <div className="mb-3 rounded-[20px] border border-white/12 bg-white/5 px-3 py-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="label-micro">Game Info</div>
+                          <div className="mt-2 text-xs font-black uppercase tracking-[0.16em] text-white/62">
+                            {phaseLabelText} · {stageStatus}
+                          </div>
+                        </div>
+                        {!isBluffMode ? (
+                          <div className="headline-display text-xl leading-none text-[var(--gold)]">{myPlayer.score || 0}</div>
+                        ) : (
+                          <div className="text-[10px] font-black uppercase tracking-[0.14em] text-white/60">{myCardCount} cards</div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="mb-3">
+                      <div className="mb-2 label-micro">Opponents</div>
+                      <div className="space-y-2">
+                        {opponents.map(([id, p]) => (
+                          <div key={`drawer-${id}`} className="flex items-center justify-between gap-3 rounded-[18px] border border-white/12 bg-white/5 px-3 py-2">
+                            <div className="flex min-w-0 items-center gap-2">
+                              <div
+                                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-white/14 text-[10px] font-black text-white"
+                                style={{ backgroundColor: avatarColor(p?.name || 'P') }}
+                              >
+                                {(p?.name || 'P')[0]?.toUpperCase?.() || 'P'}
+                              </div>
+                              <div className="min-w-0">
+                                <div className="truncate text-xs font-semibold text-[var(--bg-cloud)]">{p?.name}</div>
+                                <div className="text-[10px] font-black uppercase tracking-[0.12em] text-white/50">
+                                  {id === visualTurnId ? 'On turn' : 'Waiting'}
+                                </div>
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              {!isBluffMode ? <div className="text-xs font-black text-[var(--gold)]">{p?.score || 0}</div> : null}
+                              <div className="text-[10px] font-black uppercase tracking-[0.12em] text-white/50">{hands[id]?.length ?? 0} cards</div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {isBluffMode ? null : null}
+
+                    <button
+                      onClick={actions.leaveRoom}
+                      className="mt-3 w-full rounded-[18px] border border-[rgba(241,100,124,0.34)] bg-[rgba(241,100,124,0.14)] px-4 py-2 text-[11px] font-black uppercase tracking-[0.14em] text-red-100"
+                    >
+                      Exit Room
+                    </button>
+                  </motion.div>
+                </>
+              )}
+            </AnimatePresence>
+          </>
+        ) : null}
+
+        {showDesktopChrome ? (
         <div className="fixed right-3 top-3 z-40 rounded-[24px] border border-[rgba(255,245,235,0.16)] bg-[rgba(40,16,24,0.42)] px-4 py-3 text-right backdrop-blur-xl shadow-[0_18px_34px_rgba(23,8,19,0.18)]">
           {/* <div className="chip-score justify-center">{theme}</div> */}
           {!isBluffMode ? (
@@ -1692,7 +1942,9 @@ export default function GameArena({
             Exit
           </button>
         </div>
+        ) : null}
 
+        {showDesktopChrome ? (
         <div className="fixed left-3 top-3 z-40 rounded-[24px] border border-[rgba(255,245,235,0.16)] bg-[rgba(40,16,24,0.42)] px-3 py-3 backdrop-blur-xl shadow-[0_18px_34px_rgba(23,8,19,0.18)]">
           <div className="label-micro mb-2">Opponents</div>
           {opponents.map(([id, p]) => (
@@ -1715,9 +1967,10 @@ export default function GameArena({
             </div>
           ))}
         </div>
+        ) : null}
 
         {/* ── OPPONENTS ───────────────────────────────────────── */}
-        {opponents.map(([id, player], i) => {
+        {showFloatingOpponents && opponents.map(([id, player], i) => {
           const slot = oppSlots[i];
           if (!slot) return null;
           return (
@@ -1763,28 +2016,40 @@ export default function GameArena({
           <div
             className="fixed z-10"
             style={{
-              top: '50%', left: '50%',
-              transform: 'translate(-50%, -42%)',
-              width: 380, height: 248,
+              top: leastSumTableTop, left: '50%',
+              transform: `translate(-50%, ${leastSumTableTranslateY})`,
+              width: tableIslandWidth, height: tableIslandHeight,
               background: 'radial-gradient(ellipse at 50% 38%, rgba(115,255,198,0.28) 0%, rgba(54,139,92,0.26) 20%, rgba(31,92,63,0.94) 56%, rgba(18,58,42,0.98) 100%)',
               borderRadius: '50%',
-              boxShadow: '0 18px 0 rgba(16,54,38,0.94), 0 34px 68px rgba(18,6,13,0.34), inset 0 -16px 24px rgba(0,0,0,0.18), inset 0 4px 18px rgba(255,255,255,0.18)',
+              boxShadow: isLeastSumPhoneLayout
+                ? '0 20px 0 rgba(16,54,38,0.94), 0 38px 84px rgba(18,6,13,0.36), inset 0 -18px 26px rgba(0,0,0,0.2), inset 0 5px 20px rgba(255,255,255,0.2)'
+                : '0 18px 0 rgba(16,54,38,0.94), 0 34px 68px rgba(18,6,13,0.34), inset 0 -16px 24px rgba(0,0,0,0.18), inset 0 4px 18px rgba(255,255,255,0.18)',
               display: isBluffMode ? 'none' : 'flex', alignItems: 'center', justifyContent: 'center',
             }}
           >
             <div
-              className="absolute inset-[-24px] pointer-events-none rounded-[50%]"
+              className="absolute pointer-events-none rounded-[50%]"
               style={{
+                inset: isLeastSumPhoneLayout ? '-32px' : '-24px',
                 background: 'radial-gradient(circle at center, rgba(255,202,104,0.1), transparent 66%)',
-                opacity: visualIsMyTurn ? 0.45 : 0.24,
+                opacity: isLeastSumPhoneLayout ? (visualIsMyTurn ? 0.52 : 0.3) : (visualIsMyTurn ? 0.45 : 0.24),
               }}
             />
+            {isLeastSumPhoneLayout ? (
+              <div
+                className="absolute inset-[-16px] rounded-[50%] pointer-events-none"
+                style={{
+                  background: 'radial-gradient(circle at 50% 22%, rgba(255,248,239,0.1), transparent 54%)',
+                  filter: 'blur(10px)',
+                }}
+              />
+            ) : null}
             <div className="absolute inset-[-6px] rounded-[50%] pointer-events-none"
                  style={{ border: '4px solid rgba(255,241,224,0.22)' }} />
             <div className="absolute inset-[12px] rounded-[50%] pointer-events-none border border-[rgba(255,248,239,0.12)]" />
 
-            <div className="flex items-center gap-5 z-10">
-                <div className="flex flex-col items-center gap-1 relative rounded-[22px] border border-[rgba(255,245,235,0.08)] bg-[rgba(255,248,239,0.04)] px-3 py-2">
+            <div className={`z-10 flex items-center ${isCompactLayout ? 'gap-3' : 'gap-5'}`}>
+                <div className={`relative flex flex-col items-center gap-1 rounded-[22px] border border-[rgba(255,245,235,0.08)] bg-[rgba(255,248,239,0.04)] ${isCompactLayout ? 'px-2 py-2' : 'px-3 py-2'}`}>
                   <motion.div
                     animate={canPick ? { y: [0, -5, 0] } : {}}
                     transition={{ repeat: Infinity, duration: 1.6 }}
@@ -1802,7 +2067,7 @@ export default function GameArena({
                   <span className="label-micro text-white/78">Deck</span>
                 </div>
 
-                <div className="flex flex-col items-center gap-1 relative rounded-[22px] border border-[rgba(255,245,235,0.08)] bg-[rgba(255,248,239,0.04)] px-3 py-2">
+                <div className={`relative flex flex-col items-center gap-1 rounded-[22px] border border-[rgba(255,245,235,0.08)] bg-[rgba(255,248,239,0.04)] ${isCompactLayout ? 'px-2 py-2' : 'px-3 py-2'}`}>
                   <motion.div
                     animate={canPick && visualPreviousCard ? { scale: [1, 1.04, 1] } : {}}
                     transition={{ repeat: Infinity, duration: 1.6 }}
@@ -1825,7 +2090,7 @@ export default function GameArena({
                   <span className="label-micro text-white/78">Previous</span>
                 </div>
 
-                <div className="flex flex-col items-center gap-1 relative rounded-[22px] border border-[rgba(255,245,235,0.08)] bg-[rgba(255,248,239,0.04)] px-3 py-2">
+                <div className={`relative flex flex-col items-center gap-1 rounded-[22px] border border-[rgba(255,245,235,0.08)] bg-[rgba(255,248,239,0.04)] ${isCompactLayout ? 'px-2 py-2' : 'px-3 py-2'}`}>
                   <div className="relative">
                     <CardBack size="sm" className="opacity-85" />
                     {pileTop && (
@@ -1846,7 +2111,7 @@ export default function GameArena({
                 </div>
 
                 {jokerCard && (
-                  <div className="flex flex-col items-center gap-1 relative rounded-[22px] border border-[rgba(255,245,235,0.08)] bg-[rgba(255,248,239,0.04)] px-3 py-2">
+                  <div className={`relative flex flex-col items-center gap-1 rounded-[22px] border border-[rgba(255,245,235,0.08)] bg-[rgba(255,248,239,0.04)] ${isCompactLayout ? 'px-2 py-2' : 'px-3 py-2'}`}>
                     <div className="relative">
                       <PlayingCard
                         rank={jokerCard.rank}
@@ -1869,25 +2134,30 @@ export default function GameArena({
 
         {isBluffMode && (
           <div
-            className="fixed z-20 left-1/2 -translate-x-1/2"
-            style={{ top: '48%', transform: 'translate(-50%, -42%)' }}
+            className={`fixed left-1/2 -translate-x-1/2 ${isBluffCompactLayout ? 'z-20' : 'z-30'}`}
+            style={{
+              top: isBluffCompactLayout ? '37.5%' : isPhoneLayout ? '45%' : '48%',
+              transform: isBluffCompactLayout ? 'translate(-50%, -33%)' : 'translate(-50%, -42%)',
+            }}
           >
             {bluffTableControls}
           </div>
         )}
 
         {/* ── BOTTOM AREA (fixed) ─────────────────────────────── */}
-        <div className="fixed bottom-0 left-0 right-0 z-30 flex flex-col">
+        <div className={`fixed bottom-0 left-0 right-0 z-30 flex flex-col pointer-events-none ${isLeastSumPhoneLayout ? 'pb-1' : ''} ${isBluffCompactLayout ? '-translate-y-3' : ''}`}>
           <AnimatePresence>
-            {visualIsMyTurn && (
+            {visualIsMyTurn && !isBluffCompactLayout && (
               <motion.div
                 key="yourturn"
                 initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }}
-                className="flex justify-center mb-2"
+                className="mb-2 flex justify-center pointer-events-none"
               >
                 <motion.div
                   animate={{ y: [0, -6, 0] }} transition={{ repeat: Infinity, duration: 0.7 }}
-                  className="headline-display rounded-full border px-6 py-2 text-sm font-black uppercase tracking-[0.18em]"
+                  className={`headline-display rounded-full border font-black uppercase ${
+                    isCompactLayout ? 'px-5 py-1.5 text-[11px] tracking-[0.14em]' : 'px-6 py-2 text-sm tracking-[0.18em]'
+                  }`}
                   style={{ background:'linear-gradient(180deg,#ffd788,#ffb463)', color:'#34171a', borderColor:'rgba(108,52,19,0.24)', boxShadow:'0 10px 22px rgba(255,177,99,0.28)' }}
                 >
                   Your Turn
@@ -1896,8 +2166,10 @@ export default function GameArena({
             )}
           </AnimatePresence>
 
-          <div className="relative z-40 pointer-events-auto flex items-end justify-between gap-2 flex-wrap px-3 mb-1.5">
-            <div className={`flex items-center gap-2 rounded-[24px] border px-3 py-2.5 backdrop-blur-xl shadow-[0_18px_34px_rgba(23,8,19,0.18)] ${
+          {!isBluffCompactLayout ? (
+          <div className={`relative z-40 pointer-events-auto ${isLeastSumPhoneLayout ? 'mb-1 px-2.5' : 'mb-1.5 px-3'} ${isBluffCompactLayout && showHandScrollButtons ? 'pb-2' : ''} flex gap-2 ${isCompactLayout ? 'flex-col' : 'flex-wrap items-end justify-between'}`}>
+            {!isBluffCompactLayout ? (
+            <div className={`flex items-center gap-2 rounded-[24px] border backdrop-blur-xl shadow-[0_18px_34px_rgba(23,8,19,0.18)] ${isCompactLayout ? 'w-full' : ''} ${isLeastSumPhoneLayout ? 'px-3 py-2' : 'px-3 py-2.5'} ${
               visualIsMyTurn
                 ? 'border-[rgba(255,202,104,0.34)] bg-[linear-gradient(180deg,rgba(255,202,104,0.14),rgba(40,16,24,0.48))]'
                 : 'border-[rgba(255,245,235,0.16)] bg-[rgba(40,16,24,0.46)]'
@@ -1909,16 +2181,16 @@ export default function GameArena({
                 {(myPlayer.name || 'Y')[0]?.toUpperCase?.() || 'Y'}
               </div>
               <div>
-                <div className="flex items-center gap-1.5 text-[var(--bg-cloud)] font-semibold text-xs leading-tight">
+                <div className={`flex items-center gap-1.5 text-[var(--bg-cloud)] font-semibold leading-tight ${isCompactLayout ? 'text-[11px]' : 'text-xs'}`}>
                   <span>{myPlayer.name}</span>
                   {myId === leaderPlayerId ? (
                     <span className="flex h-4.5 w-4.5 items-center justify-center rounded-full border border-[rgba(255,202,104,0.34)] bg-[rgba(255,202,104,0.14)] text-[var(--gold)]">
                       <IconCrown />
                     </span>
                   ) : null}
-                  <span className="text-white/40 font-semibold text-[10px]">(YOU)</span>
+                  <span className={`text-white/40 font-semibold ${isCompactLayout ? 'text-[9px]' : 'text-[10px]'}`}>(YOU)</span>
                 </div>
-                <div className="text-[var(--gold)] text-xs font-black leading-tight">
+                <div className={`text-[var(--gold)] font-black leading-tight ${isCompactLayout ? 'text-[11px]' : 'text-xs'}`}>
                   {isBluffMode ? `Cards: ${myCardCount}` : `Current Sum: ${myRoundSum}`}
                 </div>
               </div>
@@ -1938,15 +2210,20 @@ export default function GameArena({
                 />
               )}
             </div>
+            ) : null}
 
-            <div className="flex items-center gap-2 flex-wrap justify-end">
+            <div className={`flex items-center gap-2 flex-wrap ${isCompactLayout ? 'w-full justify-center' : 'justify-end'} ${isLeastSumPhoneLayout ? 'pb-0.5' : ''}`}>
               {!isBluffMode && actionBlockReason && (
-                <div className="rounded-[20px] border border-[rgba(255,245,235,0.14)] bg-[rgba(40,16,24,0.42)] px-3 py-2 text-[10px] font-black uppercase tracking-wider text-white/70 backdrop-blur-xl">
+                <div className={`rounded-[20px] border border-[rgba(255,245,235,0.14)] bg-[rgba(40,16,24,0.42)] font-black uppercase text-white/70 backdrop-blur-xl ${
+                  isCompactLayout ? 'px-3 py-1.5 text-[9px] tracking-[0.1em]' : 'px-3 py-2 text-[10px] tracking-wider'
+                }`}>
                   {actionBlockReason}
                 </div>
               )}
-              {visualIsMyTurn && isBluffMode ? (
-	                <div className="rounded-[20px] border border-[rgba(255,245,235,0.14)] bg-[rgba(40,16,24,0.42)] px-4 py-2 text-[10px] font-black uppercase tracking-wider text-white/55 backdrop-blur-xl">
+              {visualIsMyTurn && isBluffMode && !isBluffCompactLayout ? (
+	                <div className={`rounded-[20px] border border-[rgba(255,245,235,0.14)] bg-[rgba(40,16,24,0.42)] font-black uppercase text-white/55 backdrop-blur-xl ${
+                    isCompactLayout ? 'px-3 py-1.5 text-[9px] tracking-[0.1em]' : 'px-4 py-2 text-[10px] tracking-wider'
+                  }`}>
 	                  Table controls
 	                </div>
 	              ) : phase === 'throw' ? (
@@ -1954,7 +2231,9 @@ export default function GameArena({
                   <button
                     onClick={onThrowAttempt}
                     disabled={!canThrow}
-                    className={`px-5 py-2.5 font-black text-xs uppercase rounded-2xl ${
+                    className={`font-black uppercase rounded-2xl ${
+                      isCompactLayout ? 'px-4 py-2 text-[11px] tracking-[0.08em]' : 'px-5 py-2.5 text-xs'
+                    } ${
                       canThrow
                         ? isThrowMatch
                           ? 'btn-primary-game'
@@ -1967,13 +2246,15 @@ export default function GameArena({
                   {canKnock && (
                     <button
                       onClick={onKnockAttempt}
-                      className="btn-danger-game px-4 py-2.5 text-xs"
+                      className={`btn-danger-game ${isCompactLayout ? 'px-3.5 py-2 text-[11px] tracking-[0.08em]' : 'px-4 py-2.5 text-xs'}`}
                     >
                       Knock
                     </button>
                   )}
                   {actionWarning && (
-                    <div className="rounded-[20px] border border-[rgba(241,100,124,0.34)] bg-[rgba(241,100,124,0.14)] px-3 py-2 text-[10px] font-black uppercase tracking-wider text-red-100">
+                    <div className={`rounded-[20px] border border-[rgba(241,100,124,0.34)] bg-[rgba(241,100,124,0.14)] font-black uppercase text-red-100 ${
+                      isCompactLayout ? 'px-3 py-1.5 text-[9px] tracking-[0.1em]' : 'px-3 py-2 text-[10px] tracking-wider'
+                    }`}>
                       {actionWarning}
                     </div>
                   )}
@@ -1983,7 +2264,9 @@ export default function GameArena({
                   <button
                     onClick={onPickDeckAttempt}
                     disabled={!canPick || !!optimisticUi?.drawPreview}
-                    className={`px-4 py-2.5 font-black text-xs uppercase rounded-2xl ${
+                    className={`uppercase rounded-2xl ${
+                      isCompactLayout ? 'px-4 py-2 text-[10px] font-semibold tracking-[0.14em]' : 'px-4 py-2.5 text-xs font-black'
+                    } ${
                       canPick && !optimisticUi?.drawPreview ? 'btn-primary-game' : 'bg-white/10 text-white/20 cursor-not-allowed'
                     }`}
                   >
@@ -1992,38 +2275,39 @@ export default function GameArena({
                   <button
                     onClick={onPickPreviousAttempt}
                     disabled={!canPick || !previousOpenCard || !!optimisticUi?.drawPreview}
-                    className={`px-4 py-2.5 font-black text-xs uppercase rounded-2xl ${
+                    className={`uppercase rounded-2xl ${
+                      isCompactLayout ? 'px-4 py-2 text-[10px] font-semibold tracking-[0.14em]' : 'px-4 py-2.5 text-xs font-black'
+                    } ${
                       canPick && previousOpenCard && !optimisticUi?.drawPreview ? 'btn-secondary-game' : 'bg-white/10 text-white/20 cursor-not-allowed'
                     }`}
                   >
                     Pick Previous
                   </button>
                   {optimisticUi?.drawPreview ? (
-                    <div className="rounded-[20px] border border-[rgba(255,202,104,0.34)] bg-[rgba(255,202,104,0.12)] px-3 py-2 text-[10px] font-black uppercase tracking-wider text-yellow-100">
+                    <div className={`rounded-[20px] border border-[rgba(255,202,104,0.34)] bg-[rgba(255,202,104,0.12)] font-black uppercase text-yellow-100 ${
+                      isCompactLayout ? 'px-3 py-1.5 text-[9px] tracking-[0.1em]' : 'px-3 py-2 text-[10px] tracking-wider'
+                    }`}>
                       Drawing...
                     </div>
                   ) : null}
-                  {pendingThrown.length > 0 && (
-                    <div className="rounded-[20px] border border-[rgba(255,202,104,0.34)] bg-[rgba(255,202,104,0.12)] px-3 py-2 text-[10px] font-black uppercase tracking-wider text-yellow-100">
-                      Thrown: {pendingThrown.map((c) => c?.rank).filter(Boolean).join(', ')}
-                    </div>
-                  )}
+                  {pendingThrown.length > 0 ? null : null}
                 </div>
               ) : null}
             </div>
           </div>
+          ) : null}
 
           {/* ── HAND CARDS — horizontally scrollable, max 10 ──── */}
           {!usePixiRenderer ? (
-            <div className="relative z-10 overflow-visible px-4 pb-5">
-              {showHandScrollButtons ? (
-                <div className="relative z-[120] mb-2 flex items-center justify-between px-1 pointer-events-auto">
+            <div className={`relative z-10 overflow-visible pointer-events-auto ${isLeastSumPhoneLayout ? 'px-3 pb-4' : 'px-4 pb-5'} ${isBluffCompactLayout ? '-mt-2 px-3 pb-1' : ''} ${isBluffCompactLayout && showHandScrollButtons ? 'pt-0' : ''}`}>
+              {showHandScrollButtons && !isBluffCompactLayout ? (
+                <div className={`relative z-[120] pointer-events-auto ${isBluffCompactLayout ? 'mb-3 rounded-[18px] border border-[rgba(255,245,235,0.12)] bg-[rgba(40,16,24,0.34)] px-2 py-1.5 shadow-[0_12px_24px_rgba(23,8,19,0.16)]' : 'mb-2 px-1'} flex items-center justify-between`}>
                   <button
                     type="button"
                     onClick={() => scrollHandStripBy(-1)}
-                    disabled={!handScrollState.canLeft}
+                    disabled={!canScrollHandLeft}
                     className={`flex h-9 w-9 items-center justify-center rounded-full border transition ${
-                      handScrollState.canLeft
+                      canScrollHandLeft
                         ? 'border-[rgba(255,202,104,0.42)] bg-[rgba(40,16,24,0.56)] text-[var(--gold)] shadow-[0_12px_24px_rgba(23,8,19,0.18)]'
                         : 'border-white/10 bg-white/5 text-white/25 cursor-not-allowed'
                     }`}
@@ -2031,15 +2315,21 @@ export default function GameArena({
                   >
                     <IconChevronLeft />
                   </button>
-                  <div className="rounded-full border border-[rgba(255,245,235,0.12)] bg-[rgba(40,16,24,0.34)] px-3 py-1 text-[9px] font-black uppercase tracking-[0.14em] text-white/55">
-                    Scroll hand
-                  </div>
+                  {!isBluffCompactLayout ? (
+                    <div className="rounded-full border border-[rgba(255,245,235,0.12)] bg-[rgba(40,16,24,0.34)] px-3 py-1 text-[9px] font-black uppercase tracking-[0.14em] text-white/55">
+                      Scroll hand
+                    </div>
+                  ) : (
+                    <div className="px-2 text-[8px] font-semibold uppercase tracking-[0.12em] text-white/50">
+                      Scroll
+                    </div>
+                  )}
                   <button
                     type="button"
                     onClick={() => scrollHandStripBy(1)}
-                    disabled={!handScrollState.canRight}
+                    disabled={!canScrollHandRight}
                     className={`flex h-9 w-9 items-center justify-center rounded-full border transition ${
-                      handScrollState.canRight
+                      canScrollHandRight
                         ? 'border-[rgba(255,202,104,0.42)] bg-[rgba(40,16,24,0.56)] text-[var(--gold)] shadow-[0_12px_24px_rgba(23,8,19,0.18)]'
                         : 'border-white/10 bg-white/5 text-white/25 cursor-not-allowed'
                     }`}
@@ -2053,25 +2343,27 @@ export default function GameArena({
                 ref={handStripRef}
                 onScroll={onHandStripScroll}
                 style={{
-                  overflowX: !isBluffMode ? 'auto' : (isBluffHandScrollable ? 'auto' : 'hidden'),
+                  overflowX: isHandScrollable ? 'auto' : 'hidden',
                   overflowY: 'hidden',
                   scrollbarWidth: 'none',
                   WebkitOverflowScrolling: 'touch',
                   touchAction: isDragging ? 'none' : 'pan-x',
-                  paddingTop: `${handLiftReservePx}px`,
-                  marginTop: `-${handLiftReservePx}px`,
+                  paddingTop: `${handTopReservePx}px`,
+                  marginTop: `-${handTopReservePx}px`,
                   position: 'relative',
                   zIndex: 10,
                 }}
               >
                 <div
                   ref={handTrackRef}
-                  className={`rounded-t-[28px] border border-b-0 border-[rgba(255,245,235,0.14)] bg-[linear-gradient(180deg,rgba(40,16,24,0.42),rgba(40,16,24,0.14))] pt-3 shadow-[0_-14px_28px_rgba(23,8,19,0.14)] ${
+                  className={`rounded-t-[28px] border border-b-0 border-[rgba(255,245,235,0.14)] bg-[linear-gradient(180deg,rgba(40,16,24,0.42),rgba(40,16,24,0.14))] ${isBluffCompactLayout ? 'pt-0' : 'pt-3'} shadow-[0_-14px_28px_rgba(23,8,19,0.14)] ${
                     isBluffMode
-                      ? isBluffHandScrollable
+                      ? isHandScrollable
                         ? 'flex w-max min-w-max items-end justify-start pl-4 pr-8'
                         : 'mx-auto flex w-max items-end justify-start pl-4 pr-8'
-                      : 'mx-auto flex min-w-full w-max items-end justify-center px-4'
+                      : isHandScrollable
+                        ? 'flex w-max min-w-max items-end justify-start px-4'
+                        : 'mx-auto flex min-w-full w-max items-end justify-center px-4'
                   }`}
                 >
   	              {handVisualCards.map((card, cardIdx) => {
@@ -2094,7 +2386,7 @@ export default function GameArena({
                           <PlayingCard
                             rank={card.rank}
                             suit={card.suit}
-                            size={isBluffMode ? 'compact' : 'lg'}
+                            size={isBluffMode ? bluffHandCardSize : 'lg'}
                             isDisabled
                             style={{ boxShadow: '0 16px 30px rgba(23,8,19,0.24)' }}
                           />
@@ -2153,7 +2445,7 @@ export default function GameArena({
                       <PlayingCard
                         rank={card.rank}
                         suit={card.suit}
-                        size={isBluffMode ? 'compact' : 'lg'}
+                        size={isBluffMode ? bluffHandCardSize : 'lg'}
                         isSelected={isChosen}
                         isMatchable={isMatchable && !isChosen}
                         isJoker={isJokerCard}

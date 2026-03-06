@@ -149,18 +149,18 @@ function SliderRow({ label, min, max, step = 1, value, onChange, onCommit, onSta
   );
 }
 
-function PremiumHero({ eyebrow, title, subtitle }) {
+function PremiumHero({ eyebrow, title, subtitle, className = '', titleClassName = '', subtitleClassName = '' }) {
   return (
-    <div className="relative overflow-hidden rounded-[32px] border border-[rgba(255,236,219,0.16)] bg-[linear-gradient(145deg,rgba(255,255,255,0.08),rgba(255,255,255,0.02)),linear-gradient(135deg,rgba(99,24,44,0.92),rgba(55,17,34,0.88))] px-6 py-6 shadow-[0_28px_60px_rgba(23,8,19,0.28)]">
+    <div className={`relative overflow-hidden rounded-[32px] border border-[rgba(255,236,219,0.16)] bg-[linear-gradient(145deg,rgba(255,255,255,0.08),rgba(255,255,255,0.02)),linear-gradient(135deg,rgba(99,24,44,0.92),rgba(55,17,34,0.88))] px-5 py-5 shadow-[0_28px_60px_rgba(23,8,19,0.28)] sm:px-6 sm:py-6 ${className}`}>
       <div className="absolute -left-10 top-2 h-24 w-24 rounded-full bg-[rgba(255,170,116,0.22)] blur-2xl" />
       <div className="absolute -right-12 top-8 h-28 w-28 rounded-full bg-[rgba(241,100,124,0.18)] blur-2xl" />
       <div className="absolute bottom-0 right-10 h-24 w-24 rounded-full bg-[rgba(140,234,214,0.12)] blur-2xl" />
       <div className="relative">
         <div className="label-micro mb-3">{eyebrow}</div>
-        <h1 className="headline-display text-4xl leading-[0.92] text-[var(--bg-cloud)] sm:text-[3.35rem]">
+        <h1 className={`headline-display text-[2.35rem] leading-[0.92] text-[var(--bg-cloud)] sm:text-[3.35rem] ${titleClassName}`}>
           {title}
         </h1>
-        <p className="mt-3 max-w-md text-sm leading-6 text-white/72">
+        <p className={`mt-3 max-w-md text-sm leading-6 text-white/72 ${subtitleClassName}`}>
           {subtitle}
         </p>
       </div>
@@ -203,25 +203,29 @@ export function Lobby({ onCreateRoom, onJoinRoom, error, clearError, loading }) 
         className="my-auto w-full max-w-6xl"
       >
         {!activeMode ? (
-          <div className="grid gap-5 lg:grid-cols-[1.05fr_0.95fr]">
+          <div className="grid gap-4 sm:gap-5 lg:grid-cols-[1.05fr_0.95fr]">
             <PremiumHero
               eyebrow="Card Rooms"
               title="Choose a Game"
               subtitle="Pick a room type, then create or join."
+              titleClassName="max-w-[10ch]"
+              subtitleClassName="max-w-[28ch]"
             />
 
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid gap-3 sm:grid-cols-2 sm:gap-4">
               {Object.values(GAME_OPTIONS).map((option) => (
                 <ModeTile key={option.key} option={option} onSelect={selectMode} />
               ))}
             </div>
           </div>
         ) : (
-          <div className="grid gap-5 lg:grid-cols-[1.1fr_0.9fr]">
+          <div className="grid gap-4 sm:gap-5 lg:grid-cols-[1.1fr_0.9fr]">
             <PremiumHero
               eyebrow={activeMode.eyebrow}
               title={activeMode.title}
               subtitle={activeMode.description}
+              titleClassName="max-w-[11ch]"
+              subtitleClassName="max-w-[28ch]"
             />
 
             <div className="surface-panel relative overflow-hidden p-5 sm:p-6">
@@ -325,9 +329,9 @@ function PlayerSeatRow({
   onKickAttempt,
 }) {
   return (
-    <div className="surface-glass flex items-center gap-3 rounded-[24px] p-3.5">
+    <div className="surface-glass flex items-center gap-3 rounded-[22px] px-3 py-3 sm:rounded-[24px] sm:p-3.5">
       <div
-        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[16px] border border-white/30 text-sm font-extrabold text-white shadow-[0_12px_20px_rgba(0,0,0,0.12)]"
+        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] border border-white/30 text-sm font-extrabold text-white shadow-[0_12px_20px_rgba(0,0,0,0.12)] sm:h-11 sm:w-11 sm:rounded-[16px]"
         style={{ backgroundColor: avatarColor(player?.name || 'P') }}
       >
         {(player?.name || 'P')[0].toUpperCase()}
@@ -343,7 +347,7 @@ function PlayerSeatRow({
         <button
           onClick={() => onKickAttempt(id, player?.name || 'Player')}
           disabled={kickingPlayerId === id}
-          className="btn-danger-game px-3 py-2 text-[11px]"
+          className="btn-danger-game shrink-0 px-3 py-2 text-[10px] sm:text-[11px]"
         >
           {kickingPlayerId === id ? 'Kicking' : 'Kick'}
         </button>
@@ -373,6 +377,7 @@ export function WaitingRoom({
   const cfg = draftCfg;
   const players = Object.entries(gameState?.players ?? {}).sort((a, b) => a[1].order - b[1].order);
   const hostPlayerId = gameState?.hostPlayerId ?? players[0]?.[0] ?? null;
+  const modeLabel = cfg.gameMode === 'bluff' ? 'Bluff' : 'Least Sum';
 
   useEffect(() => {
     setDraftCfg(remoteCfg);
@@ -435,16 +440,29 @@ export function WaitingRoom({
         initial={{ opacity: 0, y: 24 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
-        className="my-auto grid min-h-fit w-full max-w-6xl gap-5 xl:grid-cols-[1.05fr_0.95fr]"
+        className="my-auto grid min-h-fit w-full max-w-6xl gap-4 sm:gap-5 xl:grid-cols-[1.05fr_0.95fr]"
       >
-        <div className="space-y-5">
+        <div className="space-y-4 sm:space-y-5">
           <PremiumHero
             eyebrow="Waiting Room"
             title="Waiting Room"
             subtitle="Waiting for players."
+            titleClassName="max-w-[10ch]"
+            subtitleClassName="max-w-[24ch]"
           />
 
-          <div className="surface-panel p-5 sm:p-6">
+          <div className="surface-panel p-4 sm:hidden">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="label-micro">Room Code</div>
+                <div className="headline-display mt-2 text-3xl tracking-[0.18em] text-[var(--gold)]">{roomCode}</div>
+              </div>
+              <div className="chip-score">{modeLabel}</div>
+            </div>
+            <div className="mt-3 text-sm text-white/58">Share this code and wait for the full table.</div>
+          </div>
+
+          <div className="surface-panel p-4 sm:p-5 lg:p-6">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <div>
                 <div className="label-micro">Player lineup</div>
@@ -452,7 +470,7 @@ export function WaitingRoom({
                   {players.length} seated
                 </div>
               </div>
-              <div className="chip-score">{cfg.gameMode === 'bluff' ? 'Bluff' : 'Least Sum'}</div>
+              <div className="chip-score">{modeLabel}</div>
             </div>
 
             {kickError ? <ErrorBanner message={kickError} onDismiss={() => setKickError('')} /> : null}
@@ -474,7 +492,7 @@ export function WaitingRoom({
           </div>
         </div>
 
-        <div className="surface-panel p-5 sm:p-6">
+        <div className="surface-panel p-4 sm:p-5 lg:p-6">
           <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
             <div>
               <div className="label-micro">Host rail</div>
@@ -485,7 +503,7 @@ export function WaitingRoom({
             <div className="chip-host">{isHost ? 'You are host' : 'Guest seat'}</div>
           </div>
 
-          <div className="surface-glass mb-4 rounded-[24px] p-4">
+          <div className="surface-glass mb-4 hidden rounded-[24px] p-4 sm:block">
             <div className="label-micro">Room Code</div>
             <div className="headline-display mt-2 text-4xl tracking-[0.18em] text-[var(--gold)]">{roomCode}</div>
             <div className="mt-2 text-sm text-white/58">Share this code.</div>
@@ -508,11 +526,11 @@ export function WaitingRoom({
                     exit={{ opacity: 0, height: 0 }}
                     className="overflow-hidden"
                   >
-                    <div className="space-y-4">
+                    <div className="space-y-3 sm:space-y-4">
                       <div className="rounded-[24px] border border-[rgba(255,245,235,0.14)] bg-[rgba(255,248,239,0.04)] p-4">
                         <div className="label-micro mb-3">Game Mode</div>
                         <div className="chip-score">
-                          {cfg.gameMode === 'bluff' ? 'Bluff' : 'Least Sum'}
+                          {modeLabel}
                         </div>
                       </div>
 
@@ -607,7 +625,7 @@ export function WaitingRoom({
                 disabled={players.length < 2}
                 className="btn-primary-game mt-5 w-full px-5 py-4"
               >
-                Start {cfg.gameMode === 'bluff' ? 'Bluff' : 'Least Sum'} with {players.length}
+                Start {modeLabel} with {players.length}
               </button>
             </>
           ) : (

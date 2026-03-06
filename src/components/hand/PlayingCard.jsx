@@ -26,6 +26,7 @@ export default function PlayingCard({
     md: { w: 64, h: 92, cornerPx: 11, padX: 6, padY: 6, pip: 'text-3xl', center: 1.7, badge: 'text-[9px]' },
     lg: { w: 82, h: 118, cornerPx: 13, padX: 7, padY: 7, pip: 'text-[2.55rem]', center: 2.1, badge: 'text-[10px]' },
     compact: { w: 76, h: 108, cornerPx: 12, padX: 7, padY: 6, pip: 'text-[2.2rem]', center: 1.85, badge: 'text-[10px]' },
+    miniCompact: { w: 64, h: 92, cornerPx: 10, padX: 6, padY: 5, pip: 'text-[1.9rem]', center: 1.55, badge: 'text-[9px]' },
   };
   const sz = sizes[size] ?? sizes.md;
   const suitCornerSize = `${Math.round(sz.cornerPx * 0.86)}px`;
