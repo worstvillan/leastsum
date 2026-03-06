@@ -1,12 +1,14 @@
-// App.jsx (modified BG to match image: blue sky to green, added subtle clouds or spikes if needed, but kept simple)
 import { useGame } from './hooks/useGame';
 import { Lobby, WaitingRoom } from './components/layout/PreGame';
 import GameArena from './components/layout/GameArena';
 
 const BG = () => (
   <>
-    <div className="absolute inset-0 bg-gradient-to-b from-blue-400 to-green-500 z-0 pointer-events-none" /> {/* Updated to blue-green gradient */}
-    <div className="absolute inset-0 bg-[radial-gradient(#ffffff22_1px,_transparent_1px)] bg-[size:30px_30px] opacity-10 z-0 pointer-events-none" />
+    <div className="absolute inset-0 z-0 pointer-events-none premium-atmosphere" />
+    <div className="ambient-orb orb-a z-0 pointer-events-none" />
+    <div className="ambient-orb orb-b z-0 pointer-events-none" />
+    <div className="ambient-orb orb-c z-0 pointer-events-none" />
+    <div className="absolute inset-0 z-0 pointer-events-none bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.12),transparent_35%),radial-gradient(circle_at_bottom,rgba(0,0,0,0.16),transparent_40%)]" />
   </>
 );
 

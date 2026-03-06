@@ -10,13 +10,15 @@ import {
   avatarColor, handSum, isJokerMatch, playSound, RANKS, vibrate,
 } from '../../utils/gameUtils';
 import PlayingCard, { CardBack, MiniCardBack } from '../hand/PlayingCard';
+import GameBoardCanvas from './GameBoardCanvas';
 import ResultsOverlay from './ResultsOverlay';
 import '@livekit/components-styles';
 
 // ── Keyframes injected once ────────────────────────────────────
 const STYLES = `
-  @keyframes drift  { 0%,100%{transform:translateX(0)} 50%{transform:translateX(22px)} }
+  @keyframes drift  { 0%,100%{transform:translate3d(0,0,0)} 50%{transform:translate3d(18px,-10px,0)} }
   @keyframes pulsemic { 0%,100%{box-shadow:0 0 0 0 rgba(74,222,128,.6)} 50%{box-shadow:0 0 0 7px rgba(74,222,128,0)} }
+  @keyframes shimmerline { 0%{transform:translateX(-120%)} 100%{transform:translateX(120%)} }
 `;
 
 // ── SVG icons ──────────────────────────────────────────────────
@@ -40,14 +42,14 @@ const IconTimer = () => (
 function TurnTimerBadge({ timerPct = 0, timerUrgent = false, remainingSec = 0, sizeClass = 'w-9 h-9' }) {
   return (
     <div
-      className={`relative ${sizeClass} rounded-full border-2 flex-shrink-0 ${timerUrgent ? 'border-red-300 animate-pulse' : 'border-yellow-300'}`}
+      className={`relative ${sizeClass} rounded-full border-2 flex-shrink-0 shadow-[0_10px_18px_rgba(0,0,0,0.18)] ${timerUrgent ? 'border-red-300 animate-pulse' : 'border-[rgba(255,202,104,0.8)]'}`}
       style={{
-        background: `conic-gradient(${timerUrgent ? 'rgba(248,113,113,0.95)' : 'rgba(250,204,21,0.95)'} ${timerPct * 3.6}deg, rgba(255,255,255,0.16) 0deg)`,
+        background: `conic-gradient(${timerUrgent ? 'rgba(241,100,124,0.95)' : 'rgba(255,202,104,0.95)'} ${timerPct * 3.6}deg, rgba(255,255,255,0.12) 0deg)`,
       }}
       title={`${remainingSec}s left`}
     >
-      <div className="absolute inset-[2px] rounded-full bg-black/45 flex items-center justify-center">
-        <span className={timerUrgent ? 'text-red-200' : 'text-yellow-200'}>
+      <div className="absolute inset-[2px] rounded-full bg-[rgba(40,16,24,0.78)] flex items-center justify-center">
+        <span className={timerUrgent ? 'text-red-200' : 'text-[var(--gold)]'}>
           <IconTimer />
         </span>
       </div>
@@ -191,17 +193,15 @@ function OpponentSeat({
 
   return (
     <div className="flex flex-col items-center gap-2">
-      {/* Name tag + voice */}
       <div className="flex items-center gap-2">
         <div
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full backdrop-blur-md border transition-all ${
+          className={`flex items-center gap-1.5 px-3 py-2 rounded-full border transition-all shadow-[0_16px_26px_rgba(23,8,19,0.18)] ${
             isActive
-              ? 'bg-yellow-400/20 border-yellow-400 shadow-[0_0_14px_rgba(250,204,21,0.55)]'
-              : 'bg-black/40 border-white/25'
+              ? 'bg-[linear-gradient(180deg,rgba(255,214,139,0.16),rgba(255,214,139,0.04))] border-[rgba(255,202,104,0.72)] shadow-[0_0_0_1px_rgba(255,202,104,0.2),0_16px_28px_rgba(23,8,19,0.22)]'
+              : 'bg-[rgba(40,16,24,0.46)] border-[rgba(255,245,235,0.18)] backdrop-blur-xl'
           }`}
         >
-          <span className="font-black text-white text-xs whitespace-nowrap">{player.name}</span>
-          {showScore ? <span className="text-yellow-400 font-black text-[10px]">{player.score || 0}</span> : null}
+          <span className="font-semibold text-[var(--bg-cloud)] text-xs whitespace-nowrap">{player.name}</span>
         </div>
         {showTurnTimer && (
           <TurnTimerBadge
@@ -214,13 +214,12 @@ function OpponentSeat({
         {voiceEnabled ? (
           <OppVoiceControl participantId={id} roomName={roomName} participantName={player?.name} />
         ) : (
-          <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 border bg-black/30 border-white/25 text-white/45">
+          <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 border bg-[rgba(40,16,24,0.42)] border-white/20 text-white/45">
             <IconMicOff />
           </div>
         )}
       </div>
 
-      {/* Fanned face-down cards */}
       <div
         className="relative"
         style={{ width: 72, height: 62, transform: `rotate(${fanRotation}deg)` }}
@@ -232,7 +231,12 @@ function OpponentSeat({
           );
         })}
         {count > 0 && (
-          <div className="absolute -bottom-1.5 -right-1.5 bg-white text-black text-[9px] font-black px-1.5 py-0.5 rounded-full border-2 border-gray-700 z-20 min-w-[18px] text-center leading-none shadow-md">
+          <div className="absolute -bottom-1.5 -right-1.5 z-20 min-w-[18px] rounded-full border px-1.5 py-0.5 text-center text-[9px] font-black leading-none shadow-md"
+               style={{
+                 background: 'linear-gradient(180deg,#ffd788,#ffb463)',
+                 color: '#34171a',
+                 borderColor: 'rgba(108,52,19,0.24)',
+               }}>
             {count}
           </div>
         )}
@@ -417,6 +421,8 @@ export default function GameArena({ gameState, myId, roomCode = '', actions, voi
   });
 
   const hasVoice = Boolean(voiceUrl && voiceToken);
+  const uiRendererMode = String(import.meta.env.VITE_UI_RENDERER || 'dom').trim().toLowerCase();
+  const usePixiRenderer = uiRendererMode === 'pixi';
   const resolvedRoomCode = gameState?.roomCode || roomCode || '----';
 
   if (!gameState) return null;
@@ -1009,10 +1015,10 @@ export default function GameArena({ gameState, myId, roomCode = '', actions, voi
 
   const bluffTableControls = (
     <div className="relative w-[94vw] max-w-[860px] px-4 py-4">
-      <div className="absolute inset-0 rounded-[36px] bg-gradient-to-br from-black/30 via-emerald-900/35 to-cyan-900/28 border border-white/24 shadow-[0_18px_38px_rgba(0,0,0,0.34),inset_0_1px_0_rgba(255,255,255,0.28)] backdrop-blur-md" />
-      <div className="absolute -top-3 left-1/2 -translate-x-1/2 w-[72%] h-8 rounded-full bg-white/16 blur-md pointer-events-none" />
+      <div className="absolute inset-0 rounded-[36px] border border-[rgba(255,240,224,0.16)] bg-[linear-gradient(145deg,rgba(255,255,255,0.1),rgba(255,255,255,0.02)),linear-gradient(145deg,rgba(58,18,36,0.9),rgba(32,14,28,0.88))] shadow-[0_24px_54px_rgba(23,8,19,0.28)] backdrop-blur-xl" />
+      <div className="absolute -top-3 left-1/2 -translate-x-1/2 h-8 w-[72%] rounded-full bg-[rgba(255,255,255,0.12)] blur-md pointer-events-none" />
       <div className="relative z-10">
-        <div className="mb-3 px-4 py-2 rounded-2xl bg-gradient-to-r from-emerald-500/22 to-sky-500/20 border border-white/25 text-white/90 text-[10px] font-black uppercase tracking-[0.18em] text-center">
+        <div className="mb-3 rounded-2xl border border-[rgba(255,202,104,0.26)] bg-[linear-gradient(90deg,rgba(255,202,104,0.12),rgba(140,234,214,0.12))] px-4 py-2 text-center text-[10px] font-black uppercase tracking-[0.18em] text-white/90">
           {isMyTurn ? 'Your turn to bluff' : `${currentTurnPlayer?.name ?? '…'} is playing`}
         </div>
 
@@ -1021,23 +1027,23 @@ export default function GameArena({ gameState, myId, roomCode = '', actions, voi
             <select
               value={declaredRank}
               onChange={(e) => setDeclaredRank(e.target.value)}
-              className="px-3 py-2 rounded-2xl bg-gradient-to-b from-emerald-800/75 to-cyan-900/70 border border-emerald-200/45 text-emerald-50 text-xs font-black uppercase tracking-wider shadow-[0_4px_0_rgba(0,0,0,0.26),inset_0_1px_0_rgba(255,255,255,0.2)] focus:outline-none focus:ring-2 focus:ring-emerald-300/60"
+              className="rounded-2xl border border-[rgba(255,245,235,0.18)] bg-[rgba(255,248,239,0.08)] px-3 py-2 text-xs font-black uppercase tracking-wider text-[var(--bg-cloud)] shadow-[0_10px_18px_rgba(23,8,19,0.14)] focus:outline-none focus:ring-2 focus:ring-[rgba(140,234,214,0.45)]"
             >
               {['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'].map((rank) => (
-                <option key={rank} value={rank} className="bg-slate-900 text-emerald-100">{rank}</option>
+                <option key={rank} value={rank} className="bg-slate-900 text-white">{rank}</option>
               ))}
             </select>
           ) : (
-            <div className="px-3 py-2 rounded-2xl bg-black/28 border border-white/20 text-cyan-100 text-[10px] font-black uppercase tracking-[0.12em]">
+            <div className="rounded-2xl border border-[rgba(255,245,235,0.18)] bg-[rgba(255,248,239,0.08)] px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-[var(--mint)]">
               Active rank: {activeBluffRank}
             </div>
           )}
           <button
             onClick={onBluffPlayAttempt}
             disabled={!canBluffPlay}
-            className={`px-4 py-2 font-black text-xs uppercase rounded-2xl shadow-[0_4px_0_rgba(0,0,0,0.28)] ${
+            className={`px-4 py-2 font-black text-xs uppercase rounded-2xl ${
               canBluffPlay
-                ? 'bg-gradient-to-b from-yellow-300 to-amber-400 text-black hover:brightness-105 active:translate-y-[1px]'
+                ? 'btn-primary-game'
                 : 'bg-white/10 text-white/20 cursor-not-allowed'
             }`}
           >
@@ -1046,9 +1052,9 @@ export default function GameArena({ gameState, myId, roomCode = '', actions, voi
           <button
             onClick={onBluffPassAttempt}
             disabled={!canBluffPass}
-            className={`px-3 py-2 font-black text-xs uppercase rounded-2xl shadow-[0_4px_0_rgba(0,0,0,0.28)] ${
+            className={`px-3 py-2 font-black text-xs uppercase rounded-2xl ${
               canBluffPass
-                ? 'bg-gradient-to-b from-sky-400 to-blue-500 text-white hover:brightness-105 active:translate-y-[1px]'
+                ? 'btn-secondary-game'
                 : 'bg-white/10 text-white/20 cursor-not-allowed'
             }`}
           >
@@ -1057,9 +1063,9 @@ export default function GameArena({ gameState, myId, roomCode = '', actions, voi
           <button
             onClick={onBluffObjectionAttempt}
             disabled={!canBluffObjection}
-            className={`px-3 py-2 font-black text-xs uppercase rounded-2xl shadow-[0_4px_0_rgba(0,0,0,0.28)] ${
+            className={`px-3 py-2 font-black text-xs uppercase rounded-2xl ${
               canBluffObjection
-                ? 'bg-gradient-to-b from-rose-400 to-red-500 text-white hover:brightness-105 active:translate-y-[1px]'
+                ? 'btn-danger-game'
                 : 'bg-white/10 text-white/20 cursor-not-allowed'
             }`}
           >
@@ -1189,33 +1195,36 @@ export default function GameArena({ gameState, myId, roomCode = '', actions, voi
       {/* ── FULL BOARD ──────────────────────────────────────── */}
       <div
         className="fixed inset-0 overflow-hidden select-none"
-        style={{ background: 'linear-gradient(165deg,#5BC8F5 0%,#7DD6F7 28%,#A8E6A3 60%,#4CC95A 100%)' }}
+        style={{
+          background:
+            'radial-gradient(circle at 18% 16%, rgba(255,176,118,0.16), transparent 20%), radial-gradient(circle at 82% 12%, rgba(241,100,124,0.14), transparent 18%), radial-gradient(circle at 50% 74%, rgba(140,234,214,0.1), transparent 24%), linear-gradient(160deg, #2c1220 0%, #38162e 26%, #732b42 58%, #ff986f 100%)',
+        }}
       >
-        {/* Clouds */}
         <div className="absolute inset-0 pointer-events-none overflow-hidden">
           {[
-            { w:160, h:44, top:'6%',  left:'7%',  dur:'18s',  dir:'normal'  },
-            { w:110, h:32, top:'12%', left:'62%', dur:'24s',  dir:'reverse' },
-            { w:130, h:38, top:'8%',  left:'34%', dur:'29s',  dir:'normal'  },
+            { w:240, h:110, top:'4%', left:'-3%', dur:'18s', dir:'normal', bg:'rgba(255,177,120,0.14)' },
+            { w:220, h:96, top:'10%', left:'76%', dur:'24s', dir:'reverse', bg:'rgba(241,100,124,0.12)' },
+            { w:280, h:130, top:'68%', left:'24%', dur:'29s', dir:'normal', bg:'rgba(140,234,214,0.08)' },
           ].map((c, i) => (
-            <div key={i} className="absolute rounded-[50px]"
+            <div key={i} className="absolute rounded-full"
               style={{
                 width:c.w, height:c.h, top:c.top, left:c.left,
-                background:'rgba(255,255,255,0.52)', filter:'blur(3px)',
+                background:c.bg, filter:'blur(28px)',
                 animation:`drift ${c.dur} linear infinite ${c.dir}`,
               }}
             />
           ))}
         </div>
 
-        {/* Turn flash */}
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,transparent_45%,rgba(18,6,13,0.22)_100%)]" />
+
         <AnimatePresence>
           {turnFlash && (
             <motion.div key="flash"
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
               transition={{ duration: 0.3 }}
               className="fixed inset-0 z-[5] pointer-events-none"
-              style={{ boxShadow: 'inset 0 0 80px 24px rgba(255,217,61,0.45)' }}
+              style={{ boxShadow: 'inset 0 0 120px 28px rgba(255,202,104,0.28)' }}
             />
           )}
         </AnimatePresence>
@@ -1225,29 +1234,24 @@ export default function GameArena({ gameState, myId, roomCode = '', actions, voi
           <ResultsOverlay gameState={gameState} myId={myId} actions={actions} />
         )}
 
-        {/* ── TOP HUD ─────────────────────────────────────────── */}
-
-        {/* Room + Round — top center */}
         <div
-          className="fixed top-3 left-1/2 -translate-x-1/2 z-40 px-4 py-1.5 rounded-full backdrop-blur-md border border-white/30 bg-black/25 whitespace-nowrap"
-          style={{ fontFamily:"'Fredoka One',cursive", fontSize:16, color:'white', letterSpacing:3, textShadow:'0 2px 8px rgba(0,0,0,0.3)' }}
+          className="fixed left-1/2 top-3 z-40 whitespace-nowrap rounded-full border border-[rgba(255,245,235,0.16)] bg-[rgba(40,16,24,0.42)] px-5 py-2 backdrop-blur-xl -translate-x-1/2"
+          style={{ fontFamily:'var(--font-display)', fontSize:16, color:'var(--bg-cloud)', letterSpacing:2 }}
         >
           {resolvedRoomCode} · RD {gameState.round ?? 1}
         </div>
 
         {!hasVoice && (
-          <div className="fixed top-14 left-1/2 -translate-x-1/2 z-40 px-3 py-1 rounded-full bg-black/35 border border-white/25 text-white/80 text-[10px] font-black uppercase tracking-wide whitespace-nowrap">
+          <div className="fixed left-1/2 top-16 z-40 whitespace-nowrap rounded-full border border-[rgba(255,245,235,0.16)] bg-[rgba(40,16,24,0.46)] px-3 py-1 text-[10px] font-black uppercase tracking-wide text-white/80 backdrop-blur-xl -translate-x-1/2">
             {voiceError || 'Voice unavailable. Game continues normally.'}
           </div>
         )}
 
-        {/* My total score — top right */}
-        <div className="fixed top-3 right-3 z-40 bg-black/35 backdrop-blur-md border border-white/20 rounded-2xl px-4 py-2 text-right">
+        <div className="fixed right-3 top-3 z-40 rounded-[24px] border border-[rgba(255,245,235,0.16)] bg-[rgba(40,16,24,0.42)] px-4 py-3 text-right backdrop-blur-xl shadow-[0_18px_34px_rgba(23,8,19,0.18)]">
           {!isBluffMode ? (
             <>
-              <div className="text-[9px] font-black text-white/50 uppercase tracking-[1.5px]">Score</div>
-              <div className="text-2xl font-black text-yellow-400 leading-tight"
-                   style={{ fontFamily:"'Fredoka One',cursive" }}>
+              <div className="label-micro">Score</div>
+              <div className="headline-display text-3xl leading-tight text-[var(--gold)]">
                 {myPlayer.score || 0}
               </div>
             </>
@@ -1260,13 +1264,12 @@ export default function GameArena({ gameState, myId, roomCode = '', actions, voi
           </button>
         </div>
 
-        {/* Opponents summary — top left */}
-        <div className="fixed top-3 left-3 z-40 bg-black/35 backdrop-blur-md border border-white/20 rounded-2xl px-3 py-2">
-          <div className="text-[9px] font-black text-white/50 uppercase tracking-[1.5px] mb-1">Opponents</div>
+        <div className="fixed left-3 top-3 z-40 rounded-[24px] border border-[rgba(255,245,235,0.16)] bg-[rgba(40,16,24,0.42)] px-3 py-3 backdrop-blur-xl shadow-[0_18px_34px_rgba(23,8,19,0.18)]">
+          <div className="label-micro mb-2">Opponents</div>
           {opponents.map(([id, p]) => (
-            <div key={id} className="flex justify-between gap-4 text-xs font-black">
-              <span className="text-white truncate max-w-[64px]">{p.name}</span>
-              {!isBluffMode ? <span className="text-yellow-400">{p.score || 0}</span> : null}
+            <div key={id} className="flex justify-between gap-4 text-xs">
+              <span className="max-w-[84px] truncate font-semibold text-[var(--bg-cloud)]">{p.name}</span>
+              {!isBluffMode ? <span className="font-black text-[var(--gold)]">{p.score || 0}</span> : null}
             </div>
           ))}
         </div>
@@ -1296,113 +1299,123 @@ export default function GameArena({ gameState, myId, roomCode = '', actions, voi
         })}
 
         {/* ── TABLE ISLAND ────────────────────────────────────── */}
-        <div
-          className="fixed z-10"
-          style={{
-            top: '50%', left: '50%',
-            transform: 'translate(-50%, -42%)',
-            width: 380, height: 248,
-            background: 'radial-gradient(ellipse at 50% 40%,#55D465 0%,#3DBF50 55%,#2FA83C 100%)',
-            borderRadius: '50%',
-            boxShadow: '0 14px 0 #1E8A2A, 0 22px 50px rgba(0,0,0,0.28), inset 0 -8px 20px rgba(0,0,0,0.12), inset 0 4px 12px rgba(255,255,255,0.18)',
-            display: isBluffMode ? 'none' : 'flex', alignItems: 'center', justifyContent: 'center',
-          }}
-        >
-          {/* Rim */}
-          <div className="absolute inset-[-6px] rounded-[50%] pointer-events-none"
-               style={{ border: '4px solid rgba(255,255,255,0.22)' }} />
+        {usePixiRenderer ? (
+          <GameBoardCanvas
+            gameState={gameState}
+            myId={myId}
+            actions={actions}
+            isBluffMode={isBluffMode}
+            displayCards={displayCards}
+            selectedTokens={selectedTokens}
+            canSelectHand={canSelectHand}
+            onToggleToken={toggleSelection}
+            canPick={canPick}
+            canThrow={canThrow}
+            canKnock={canKnock}
+            onThrow={onThrowAttempt}
+            onKnock={onKnockAttempt}
+            phase={phase}
+          />
+        ) : (
+          <div
+            className="fixed z-10"
+            style={{
+              top: '50%', left: '50%',
+              transform: 'translate(-50%, -42%)',
+              width: 380, height: 248,
+              background: 'radial-gradient(ellipse at 50% 38%, rgba(115,255,198,0.28) 0%, rgba(54,139,92,0.26) 20%, rgba(31,92,63,0.94) 56%, rgba(18,58,42,0.98) 100%)',
+              borderRadius: '50%',
+              boxShadow: '0 18px 0 rgba(16,54,38,0.94), 0 34px 68px rgba(18,6,13,0.34), inset 0 -16px 24px rgba(0,0,0,0.18), inset 0 4px 18px rgba(255,255,255,0.18)',
+              display: isBluffMode ? 'none' : 'flex', alignItems: 'center', justifyContent: 'center',
+            }}
+          >
+            <div className="absolute inset-[-6px] rounded-[50%] pointer-events-none"
+                 style={{ border: '4px solid rgba(255,241,224,0.22)' }} />
+            <div className="absolute inset-[12px] rounded-[50%] pointer-events-none border border-[rgba(255,248,239,0.12)]" />
 
-          {/* Center content */}
-          <div className="flex items-center gap-5 z-10">
-              {/* Deck */}
-              <div className="flex flex-col items-center gap-1 relative">
-                <motion.div
-                  animate={canPick ? { y: [0, -5, 0] } : {}}
-                  transition={{ repeat: Infinity, duration: 1.6 }}
-                >
-                  <CardBack
-                    size="md"
-                    onClick={canPick ? () => { vibrate(25); playSound('draw'); actions.pickFromDeck(); } : undefined}
-                    className={canPick ? 'ring-2 ring-yellow-400 shadow-[0_0_18px_rgba(250,204,21,0.65)] cursor-pointer' : ''}
-                  />
-                </motion.div>
-                <div className="absolute -top-2.5 -right-2.5 bg-yellow-400 text-black text-[10px] font-black w-6 h-6 rounded-full flex items-center justify-center border-2 border-white shadow z-10"
-                     style={{ fontFamily:"'Fredoka One',cursive" }}>
-                  {deckCount > 99 ? '99+' : deckCount}
-                </div>
-                <span className="text-white/85 font-black text-[9px] uppercase tracking-widest"
-                      style={{ textShadow:'0 1px 4px rgba(0,0,0,0.5)' }}>DECK</span>
-              </div>
-
-              {/* Previous player thrown card */}
-              <div className="flex flex-col items-center gap-1 relative">
-                <motion.div
-                  animate={canPick && previousOpenCard ? { scale: [1, 1.04, 1] } : {}}
-                  transition={{ repeat: Infinity, duration: 1.6 }}
-                >
-                  {previousOpenCard ? (
-                    <PlayingCard
-                      rank={previousOpenCard.rank}
-                      suit={previousOpenCard.suit}
+            <div className="flex items-center gap-5 z-10">
+                <div className="flex flex-col items-center gap-1 relative">
+                  <motion.div
+                    animate={canPick ? { y: [0, -5, 0] } : {}}
+                    transition={{ repeat: Infinity, duration: 1.6 }}
+                  >
+                    <CardBack
                       size="md"
-                      onClick={canPick ? () => { vibrate(25); playSound('draw'); actions.pickFromPrevious(); } : undefined}
-                      className={canPick ? 'ring-2 ring-yellow-400 shadow-[0_0_18px_rgba(250,204,21,0.65)] cursor-pointer' : ''}
-                      style={{ transform: 'rotate(5deg)' }}
+                      onClick={canPick ? () => { vibrate(25); playSound('draw'); actions.pickFromDeck(); } : undefined}
+                      className={canPick ? 'ring-2 ring-[rgba(255,202,104,0.9)] shadow-[0_0_18px_rgba(255,188,92,0.45)] cursor-pointer' : ''}
                     />
-                  ) : (
-                    <div className="w-[62px] h-[88px] rounded-xl border-2 border-dashed border-white/30 flex items-center justify-center">
-                      <span className="text-white/30 text-[9px] font-black uppercase">Empty</span>
-                    </div>
-                  )}
-                </motion.div>
-                <span className="text-white/85 font-black text-[9px] uppercase tracking-widest"
-                      style={{ textShadow:'0 1px 4px rgba(0,0,0,0.5)' }}>PREVIOUS</span>
-              </div>
-
-              {/* Pile */}
-              <div className="flex flex-col items-center gap-1 relative">
-                <div className="relative">
-                  <CardBack size="sm" className="opacity-85" />
-                  {pileTop && (
-                    <PlayingCard
-                      rank={pileTop.rank}
-                      suit={pileTop.suit}
-                      size="sm"
-                      isDisabled
-                      style={{ position: 'absolute', top: 2, left: 8, opacity: 0.9, transform: 'rotate(8deg)' }}
-                    />
-                  )}
+                  </motion.div>
+                  <div className="headline-display absolute -right-2.5 -top-2.5 z-10 flex h-6 w-6 items-center justify-center rounded-full border text-[10px] font-black shadow"
+                       style={{ background:'linear-gradient(180deg,#ffd788,#ffb463)', color:'#34171a', borderColor:'rgba(108,52,19,0.24)' }}>
+                    {deckCount > 99 ? '99+' : deckCount}
+                  </div>
+                  <span className="label-micro text-white/78">Deck</span>
                 </div>
-                <div className="absolute -top-2.5 -right-2.5 bg-white text-black text-[10px] font-black w-6 h-6 rounded-full flex items-center justify-center border-2 border-gray-700 shadow z-10"
-                     style={{ fontFamily:"'Fredoka One',cursive" }}>
-                  {pileArr.length > 99 ? '99+' : pileArr.length}
-                </div>
-                <span className="text-white/85 font-black text-[9px] uppercase tracking-widest"
-                      style={{ textShadow:'0 1px 4px rgba(0,0,0,0.5)' }}>PILE</span>
-              </div>
 
-              {/* Joker card */}
-              {jokerCard && (
+                <div className="flex flex-col items-center gap-1 relative">
+                  <motion.div
+                    animate={canPick && previousOpenCard ? { scale: [1, 1.04, 1] } : {}}
+                    transition={{ repeat: Infinity, duration: 1.6 }}
+                  >
+                    {previousOpenCard ? (
+                      <PlayingCard
+                        rank={previousOpenCard.rank}
+                        suit={previousOpenCard.suit}
+                        size="md"
+                        onClick={canPick ? () => { vibrate(25); playSound('draw'); actions.pickFromPrevious(); } : undefined}
+                        className={canPick ? 'ring-2 ring-[rgba(255,202,104,0.9)] shadow-[0_0_18px_rgba(255,188,92,0.45)] cursor-pointer' : ''}
+                        style={{ transform: 'rotate(5deg)' }}
+                      />
+                    ) : (
+                      <div className="flex h-[92px] w-[64px] items-center justify-center rounded-[20px] border-2 border-dashed border-white/18 bg-[rgba(255,248,239,0.04)]">
+                        <span className="label-micro text-white/34">Empty</span>
+                      </div>
+                    )}
+                  </motion.div>
+                  <span className="label-micro text-white/78">Previous</span>
+                </div>
+
                 <div className="flex flex-col items-center gap-1 relative">
                   <div className="relative">
-                    <PlayingCard
-                      rank={jokerCard.rank}
-                      suit={jokerCard.suit}
-                      size="sm"
-                      isDisabled
-                      style={{ transform: 'rotate(-6deg)', opacity: 0.9 }}
-                    />
-                    <div className="absolute -top-3 -right-3 bg-yellow-400 text-black text-[8px] font-black px-1.5 py-0.5 rounded-md border border-black rotate-12 z-10"
-                         style={{ boxShadow:'0 0 8px rgba(250,204,21,0.55)' }}>
-                      JOKER
-                    </div>
+                    <CardBack size="sm" className="opacity-85" />
+                    {pileTop && (
+                      <PlayingCard
+                        rank={pileTop.rank}
+                        suit={pileTop.suit}
+                        size="sm"
+                        isDisabled
+                        style={{ position: 'absolute', top: 2, left: 8, opacity: 0.9, transform: 'rotate(8deg)' }}
+                      />
+                    )}
                   </div>
-                  <span className="text-yellow-300 font-black text-[9px] uppercase tracking-widest"
-                        style={{ textShadow:'0 1px 4px rgba(0,0,0,0.5)' }}>−1 PT</span>
+                  <div className="headline-display absolute -right-2.5 -top-2.5 z-10 flex h-6 w-6 items-center justify-center rounded-full border text-[10px] font-black shadow"
+                       style={{ background:'rgba(255,248,239,0.92)', color:'#34171a', borderColor:'rgba(79,55,71,0.22)' }}>
+                    {pileArr.length > 99 ? '99+' : pileArr.length}
+                  </div>
+                  <span className="label-micro text-white/78">Pile</span>
                 </div>
-              )}
+
+                {jokerCard && (
+                  <div className="flex flex-col items-center gap-1 relative">
+                    <div className="relative">
+                      <PlayingCard
+                        rank={jokerCard.rank}
+                        suit={jokerCard.suit}
+                        size="sm"
+                        isDisabled
+                        style={{ transform: 'rotate(-6deg)', opacity: 0.9 }}
+                      />
+                      <div className="absolute -top-3 -right-3 bg-yellow-400 text-black text-[8px] font-black px-1.5 py-0.5 rounded-md border border-black rotate-12 z-10"
+                          style={{ boxShadow:'0 0 8px rgba(250,204,21,0.55)' }}>
+                        JOKER
+                      </div>
+                    </div>
+                    <span className="label-micro text-[var(--gold)]">-1 Pt</span>
+                  </div>
+                )}
+            </div>
           </div>
-        </div>
+        )}
 
         {isBluffMode && (
           <div
@@ -1415,8 +1428,6 @@ export default function GameArena({ gameState, myId, roomCode = '', actions, voi
 
         {/* ── BOTTOM AREA (fixed) ─────────────────────────────── */}
         <div className="fixed bottom-0 left-0 right-0 z-30 flex flex-col">
-
-          {/* YOUR TURN badge */}
           <AnimatePresence>
             {isMyTurn && (
               <motion.div
@@ -1426,32 +1437,29 @@ export default function GameArena({ gameState, myId, roomCode = '', actions, voi
               >
                 <motion.div
                   animate={{ y: [0, -6, 0] }} transition={{ repeat: Infinity, duration: 0.7 }}
-                  className="bg-yellow-400 text-black font-black text-sm px-6 py-1.5 rounded-full"
-                  style={{ fontFamily:"'Fredoka One',cursive", boxShadow:'0 4px 0 rgba(0,0,0,0.28), 0 0 22px rgba(255,217,61,0.55)' }}
+                  className="headline-display rounded-full border px-6 py-2 text-sm font-black uppercase tracking-[0.18em]"
+                  style={{ background:'linear-gradient(180deg,#ffd788,#ffb463)', color:'#34171a', borderColor:'rgba(108,52,19,0.24)', boxShadow:'0 10px 22px rgba(255,177,99,0.28)' }}
                 >
-                  YOUR TURN ✦
+                  Your Turn
                 </motion.div>
               </motion.div>
             )}
           </AnimatePresence>
 
-          {/* Action row */}
-          <div className="relative z-40 pointer-events-auto flex items-end justify-between px-3 mb-1.5 gap-2 flex-wrap">
-
-            {/* My info + voice toggle */}
-            <div className="flex items-center gap-2 bg-black/40 backdrop-blur-md border border-white/20 rounded-2xl px-3 py-2">
+          <div className="relative z-40 pointer-events-auto flex items-end justify-between gap-2 flex-wrap px-3 mb-1.5">
+            <div className="flex items-center gap-2 rounded-[24px] border border-[rgba(255,245,235,0.16)] bg-[rgba(40,16,24,0.46)] px-3 py-2.5 backdrop-blur-xl shadow-[0_18px_34px_rgba(23,8,19,0.18)]">
               <div>
-                <div className="text-white font-black text-xs leading-tight">
-                  {myPlayer.name}&nbsp;<span className="text-white/40 font-bold text-[10px]">(YOU)</span>
+                <div className="text-[var(--bg-cloud)] font-semibold text-xs leading-tight">
+                  {myPlayer.name}&nbsp;<span className="text-white/40 font-semibold text-[10px]">(YOU)</span>
                 </div>
-                <div className="text-yellow-400 text-xs font-black leading-tight">
+                <div className="text-[var(--gold)] text-xs font-black leading-tight">
                   {isBluffMode ? `Cards: ${myCardCount}` : `Current Sum: ${myRoundSum}`}
                 </div>
               </div>
               {hasVoice ? (
                 <MyVoiceButton />
               ) : (
-                <div className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 border-2 bg-black/30 border-white/25 text-white/45">
+                <div className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 border-2 bg-[rgba(40,16,24,0.42)] border-white/20 text-white/45">
                   <IconMicOff />
                 </div>
               )}
@@ -1465,19 +1473,18 @@ export default function GameArena({ gameState, myId, roomCode = '', actions, voi
               )}
             </div>
 
-            {/* Phase actions */}
             <div className="flex items-center gap-2 flex-wrap justify-end">
               {!isBluffMode && actionBlockReason && (
-                <div className="px-3 py-2 bg-black/28 backdrop-blur-md border border-white/20 rounded-2xl text-white/70 text-[10px] font-black uppercase tracking-wider">
+                <div className="rounded-[20px] border border-[rgba(255,245,235,0.14)] bg-[rgba(40,16,24,0.42)] px-3 py-2 text-[10px] font-black uppercase tracking-wider text-white/70 backdrop-blur-xl">
                   {actionBlockReason}
                 </div>
               )}
               {!isMyTurn ? (
-                <div className="px-4 py-2 bg-black/28 backdrop-blur-md border border-white/15 rounded-2xl text-white/40 text-[10px] font-black uppercase tracking-wider">
+                <div className="rounded-[20px] border border-[rgba(255,245,235,0.14)] bg-[rgba(40,16,24,0.42)] px-4 py-2 text-[10px] font-black uppercase tracking-wider text-white/46 backdrop-blur-xl">
                   {currentTurnPlayer?.name ?? '…'}'s turn
                 </div>
 		              ) : isBluffMode ? (
-	                <div className="px-4 py-2 bg-black/28 backdrop-blur-md border border-white/15 rounded-2xl text-white/55 text-[10px] font-black uppercase tracking-wider">
+	                <div className="rounded-[20px] border border-[rgba(255,245,235,0.14)] bg-[rgba(40,16,24,0.42)] px-4 py-2 text-[10px] font-black uppercase tracking-wider text-white/55 backdrop-blur-xl">
 	                  Bluff actions are on the table
 	                </div>
 	              ) : phase === 'throw' ? (
@@ -1485,26 +1492,26 @@ export default function GameArena({ gameState, myId, roomCode = '', actions, voi
                   <button
                     onClick={onThrowAttempt}
                     disabled={!canThrow}
-                    className={`px-5 py-2.5 font-black text-xs uppercase rounded-2xl shadow-[0_4px_0_rgba(0,0,0,0.28)] ${
+                    className={`px-5 py-2.5 font-black text-xs uppercase rounded-2xl ${
                       canThrow
                         ? isThrowMatch
-                          ? 'bg-yellow-400 text-black hover:brightness-110 active:scale-95'
-                          : 'bg-emerald-500 text-white hover:brightness-110 active:scale-95'
+                          ? 'btn-primary-game'
+                          : 'btn-secondary-game'
                         : 'bg-white/10 text-white/20 cursor-not-allowed'
                     }`}
                   >
-                    {isThrowMatch ? `THROW MATCH ${selectedCards[0]?.rank}s ✓` : 'THROW'}
+                    {isThrowMatch ? `Throw Match ${selectedCards[0]?.rank}s` : 'Throw'}
                   </button>
                   {canKnock && (
                     <button
                       onClick={onKnockAttempt}
-                      className="px-4 py-2.5 bg-red-500 text-white font-black text-xs uppercase rounded-2xl shadow-[0_4px_0_rgba(0,0,0,0.28)] hover:brightness-110 active:scale-95"
+                      className="btn-danger-game px-4 py-2.5 text-xs"
                     >
-                      ✊ KNOCK
+                      Knock
                     </button>
                   )}
                   {actionWarning && (
-                    <div className="px-3 py-2 bg-red-500/20 border border-red-300/50 rounded-2xl text-red-100 text-[10px] font-black uppercase tracking-wider">
+                    <div className="rounded-[20px] border border-[rgba(241,100,124,0.34)] bg-[rgba(241,100,124,0.14)] px-3 py-2 text-[10px] font-black uppercase tracking-wider text-red-100">
                       {actionWarning}
                     </div>
                   )}
@@ -1514,23 +1521,23 @@ export default function GameArena({ gameState, myId, roomCode = '', actions, voi
                   <button
                     onClick={() => { vibrate(25); playSound('draw'); actions.pickFromDeck(); }}
                     disabled={!canPick}
-                    className={`px-4 py-2.5 font-black text-xs uppercase rounded-2xl shadow-[0_4px_0_rgba(0,0,0,0.28)] ${
-                      canPick ? 'bg-sky-500 text-white hover:brightness-110 active:scale-95' : 'bg-white/10 text-white/20 cursor-not-allowed'
+                    className={`px-4 py-2.5 font-black text-xs uppercase rounded-2xl ${
+                      canPick ? 'btn-primary-game' : 'bg-white/10 text-white/20 cursor-not-allowed'
                     }`}
                   >
-                    PICK DECK
+                    Pick Deck
                   </button>
                   <button
                     onClick={() => { vibrate(25); playSound('draw'); actions.pickFromPrevious(); }}
                     disabled={!canPick || !previousOpenCard}
-                    className={`px-4 py-2.5 font-black text-xs uppercase rounded-2xl shadow-[0_4px_0_rgba(0,0,0,0.28)] ${
-                      canPick && previousOpenCard ? 'bg-emerald-500 text-white hover:brightness-110 active:scale-95' : 'bg-white/10 text-white/20 cursor-not-allowed'
+                    className={`px-4 py-2.5 font-black text-xs uppercase rounded-2xl ${
+                      canPick && previousOpenCard ? 'btn-secondary-game' : 'bg-white/10 text-white/20 cursor-not-allowed'
                     }`}
                   >
-                    PICK PREVIOUS
+                    Pick Previous
                   </button>
                   {pendingThrown.length > 0 && (
-                    <div className="px-3 py-2 bg-yellow-400/20 border border-yellow-300/40 rounded-2xl text-yellow-100 text-[10px] font-black uppercase tracking-wider">
+                    <div className="rounded-[20px] border border-[rgba(255,202,104,0.34)] bg-[rgba(255,202,104,0.12)] px-3 py-2 text-[10px] font-black uppercase tracking-wider text-yellow-100">
                       Thrown: {pendingThrown.map((c) => c?.rank).filter(Boolean).join(', ')}
                     </div>
                   )}
@@ -1540,84 +1547,88 @@ export default function GameArena({ gameState, myId, roomCode = '', actions, voi
           </div>
 
           {/* ── HAND CARDS — horizontally scrollable, max 10 ──── */}
-          <div className="relative z-10 pb-5 px-4 overflow-visible">
-            <div
-              ref={handStripRef}
-              onScroll={onHandStripScroll}
-              style={{
-                overflowX: 'auto',
-                overflowY: 'hidden',
-                scrollbarWidth: 'thin',
-                WebkitOverflowScrolling: 'touch',
-                touchAction: isDragging ? 'none' : 'pan-x',
-                paddingTop: `${handLiftReservePx}px`,
-                marginTop: `-${handLiftReservePx}px`,
-                position: 'relative',
-                zIndex: 10,
-              }}
-            >
-              <div className="flex items-end w-max min-w-full justify-center mx-auto px-1">
-	              {displayCards.map((card, cardIdx) => {
-	                const isChosen    = selectedTokens.includes(card.token);
-	                const isJokerCard = isJokerMatch(card, jokerCard);
-	                const isMatchable = !isBluffMode && phase === 'throw' && card.rank === previousOpenCard?.rank && isMyTurn;
-	                const baseAngle = isBluffMode
-	                  ? clamp((cardIdx - (displayCards.length - 1) / 2) * 0.7, -6, 6)
-	                  : 0;
-                const isDragged = dragToken === card.token;
-                const overlap = isBluffMode && cardIdx > 0
-                  ? ((isChosen || isDragged) ? 0 : -bluffOverlapPx)
-                  : 0;
-                const spreadX = isChosen && isBluffMode
-                  ? (cardIdx - (displayCards.length - 1) / 2) * 1.6
-                  : 0;
-                const liftY = isDragged
-                  ? -58
-                  : (isChosen ? -42 : 0);
+          {!usePixiRenderer ? (
+            <div className="relative z-10 overflow-visible px-4 pb-5">
+              <div
+                ref={handStripRef}
+                onScroll={onHandStripScroll}
+                style={{
+                  overflowX: 'auto',
+                  overflowY: 'hidden',
+                  scrollbarWidth: 'thin',
+                  WebkitOverflowScrolling: 'touch',
+                  touchAction: isDragging ? 'none' : 'pan-x',
+                  paddingTop: `${handLiftReservePx}px`,
+                  marginTop: `-${handLiftReservePx}px`,
+                  position: 'relative',
+                  zIndex: 10,
+                }}
+              >
+                <div className="mx-auto flex min-w-full w-max items-end justify-center rounded-t-[28px] border border-b-0 border-[rgba(255,245,235,0.14)] bg-[linear-gradient(180deg,rgba(40,16,24,0.42),rgba(40,16,24,0.14))] px-4 pt-3 shadow-[0_-14px_28px_rgba(23,8,19,0.14)]">
+  	              {displayCards.map((card, cardIdx) => {
+  	                const isChosen    = selectedTokens.includes(card.token);
+  	                const isJokerCard = isJokerMatch(card, jokerCard);
+  	                const isMatchable = !isBluffMode && phase === 'throw' && card.rank === previousOpenCard?.rank && isMyTurn;
+  	                const baseAngle = isBluffMode
+  	                  ? clamp((cardIdx - (displayCards.length - 1) / 2) * 0.7, -6, 6)
+  	                  : 0;
+                  const isDragged = dragToken === card.token;
+                  const overlap = isBluffMode && cardIdx > 0
+                    ? ((isChosen || isDragged) ? 0 : -bluffOverlapPx)
+                    : 0;
+                  const spreadX = isChosen && isBluffMode
+                    ? (cardIdx - (displayCards.length - 1) / 2) * 1.6
+                    : 0;
+                  const liftY = isDragged
+                    ? -58
+                    : (isChosen ? -42 : 0);
 
-                return (
-                  <motion.div
-                    key={card.token}
-                    ref={(node) => {
-                      if (node) cardNodeRefs.current.set(card.token, node);
-                      else cardNodeRefs.current.delete(card.token);
-                    }}
-                    data-token={card.token}
-                    animate={{ y: liftY, x: spreadX, scale: isChosen ? 1.08 : 1, rotate: baseAngle }}
-                    transition={{ type: 'spring', stiffness: 400, damping: 22 }}
-                    onPointerDown={(event) => onCardPointerDown(card.token, event)}
-                    onPointerMove={onCardPointerMove}
-                    onPointerUp={onCardPointerUp}
-                    onPointerCancel={onCardPointerCancel}
-                    onContextMenu={(event) => {
-                      if (interactionRef.current.mode !== 'none') event.preventDefault();
-                    }}
-                    style={{
-                      flexShrink: 0,
-	                      position: 'relative',
-                      overflow: 'visible',
-	                      marginLeft: overlap,
-                      marginRight: (isBluffMode && (isChosen || isDragged)) ? 6 : 0,
-                      zIndex: isDragged ? 640 : (isChosen ? 460 + cardIdx : 20 + cardIdx),
-                      cursor: isDragging ? 'grabbing' : 'grab',
-                    }}
-	                  >
-                    <PlayingCard
-                      rank={card.rank}
-                      suit={card.suit}
-                      size={isBluffMode ? 'compact' : 'lg'}
-                      isSelected={isChosen}
-                      isMatchable={isMatchable && !isChosen}
-                      isJoker={isJokerCard}
-                      isDraggable
-                      className={isDragged ? 'ring-2 ring-cyan-300 shadow-[0_0_20px_rgba(34,211,238,0.55)]' : ''}
-                    />
-                  </motion.div>
-                );
-              })}
+                  return (
+                    <motion.div
+                      key={card.token}
+                      ref={(node) => {
+                        if (node) cardNodeRefs.current.set(card.token, node);
+                        else cardNodeRefs.current.delete(card.token);
+                      }}
+                      data-token={card.token}
+                      animate={{ y: liftY, x: spreadX, scale: isChosen ? 1.08 : 1, rotate: baseAngle }}
+                      transition={{ type: 'spring', stiffness: 400, damping: 22 }}
+                      onPointerDown={(event) => onCardPointerDown(card.token, event)}
+                      onPointerMove={onCardPointerMove}
+                      onPointerUp={onCardPointerUp}
+                      onPointerCancel={onCardPointerCancel}
+                      onContextMenu={(event) => {
+                        if (interactionRef.current.mode !== 'none') event.preventDefault();
+                      }}
+                      style={{
+                        flexShrink: 0,
+  	                      position: 'relative',
+                        overflow: 'visible',
+  	                      marginLeft: overlap,
+                        marginRight: (isBluffMode && (isChosen || isDragged)) ? 6 : 0,
+                        zIndex: isDragged ? 640 : (isChosen ? 460 + cardIdx : 20 + cardIdx),
+                        cursor: isDragging ? 'grabbing' : 'grab',
+                      }}
+  	                  >
+                      <PlayingCard
+                        rank={card.rank}
+                        suit={card.suit}
+                        size={isBluffMode ? 'compact' : 'lg'}
+                        isSelected={isChosen}
+                        isMatchable={isMatchable && !isChosen}
+                        isJoker={isJokerCard}
+                        isDraggable
+                        className={isDragged ? 'ring-2 ring-cyan-300 shadow-[0_0_20px_rgba(34,211,238,0.55)]' : ''}
+                      />
+                    </motion.div>
+                  );
+                })}
+                </div>
               </div>
             </div>
-          </div>
+          ) : (
+            <div className="h-4" />
+          )}
         </div>
 
       </div>

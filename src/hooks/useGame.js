@@ -469,12 +469,16 @@ export function useGame() {
     requestVoiceToken(roomCode, myName);
   }, [roomCode, myName, requestVoiceToken]);
 
-  const createRoom = async (playerName) => {
+  const createRoom = async (playerName, config = null) => {
     if (!playerName?.trim() || loading) return;
     setLoading(true);
     setError('');
     try {
-      const result = await gameApiPost('create', { name: playerName.trim() });
+      const payload = { name: playerName.trim() };
+      if (config && typeof config === 'object') {
+        payload.config = config;
+      }
+      const result = await gameApiPost('create', payload);
       attachLocalSession(result);
     } catch (err) {
       setError(toUiError(err, 'Failed to create room.'));
