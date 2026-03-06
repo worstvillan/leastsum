@@ -44,6 +44,16 @@ const IconCrown = () => (
     <path d="M5 18h14l1-9-5.5 3-2.5-6-2.5 6L4 9l1 9z" />
   </svg>
 );
+const IconChevronLeft = () => (
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M15 18l-6-6 6-6" />
+  </svg>
+);
+const IconChevronRight = () => (
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M9 18l6-6-6-6" />
+  </svg>
+);
 
 function TurnTimerBadge({ timerPct = 0, timerUrgent = false, remainingSec = 0, sizeClass = 'w-9 h-9' }) {
   return (
@@ -239,7 +249,7 @@ function OpponentSeat({
       </div>
 
       <div
-        className="relative"
+        className="relative overflow-visible"
         style={{ width: 72, height: 62, transform: `rotate(${fanRotation}deg)` }}
       >
         {isActive ? (
@@ -258,12 +268,14 @@ function OpponentSeat({
           );
         })}
         {count > 0 && (
-          <div className="absolute -bottom-1.5 -right-1.5 z-20 min-w-[18px] rounded-full border px-1.5 py-0.5 text-center text-[9px] font-black leading-none shadow-md"
-               style={{
-                 background: 'linear-gradient(180deg,#ffd788,#ffb463)',
-                 color: '#34171a',
-                 borderColor: 'rgba(108,52,19,0.24)',
-               }}>
+          <div
+            className="absolute -right-2 -top-2 z-20 flex h-6 min-w-[24px] items-center justify-center rounded-full border-2 px-1.5 text-center text-[10px] font-black leading-[1] shadow-[0_10px_20px_rgba(33,12,22,0.28)]"
+            style={{
+              background: 'linear-gradient(180deg,#ffd788,#ffb463)',
+              color: '#34171a',
+              borderColor: 'rgba(255,250,245,0.92)',
+            }}
+          >
             {count}
           </div>
         )}
@@ -289,18 +301,18 @@ function MaskedCardStack({ count = 0, isActive = false, label = '', playerName =
   const fanSpread = Math.min(48, visibleCards * 9);
 
   return (
-    <div className="flex flex-col items-center gap-1.5 min-w-[96px]">
+    <div className="flex min-w-[104px] flex-col items-center gap-1.5">
       <motion.div
         key={`${label}-${playerName}-${bumpTick}`}
         initial={reduceMotion ? { opacity: 0.92 } : { y: 0, scale: 1 }}
         animate={reduceMotion ? { opacity: 1 } : { y: [0, -6, 0], scale: [1, 1.04, 1] }}
         transition={{ duration: reduceMotion ? 0.18 : 0.22, ease: 'easeOut' }}
-        className="relative w-[92px] h-[70px]"
+        className="relative h-[86px] w-[104px] overflow-visible"
       >
         <motion.div
           animate={isActive && !reduceMotion ? { scale: [1, 1.02, 1] } : { scale: 1 }}
           transition={isActive && !reduceMotion ? { repeat: Infinity, duration: 1.6, ease: 'easeInOut' } : { duration: 0.15 }}
-          className="relative w-full h-full"
+          className="relative h-full w-full"
         >
           {Array.from({ length: visibleCards }).map((_, i) => {
             const angle = visibleCards <= 1 ? 0 : -fanSpread / 2 + (fanSpread / Math.max(visibleCards - 1, 1)) * i;
@@ -314,11 +326,11 @@ function MaskedCardStack({ count = 0, isActive = false, label = '', playerName =
             );
           })}
         </motion.div>
-        <div className="absolute -bottom-1.5 -right-1.5 bg-yellow-300 text-black text-[10px] font-black px-1.5 py-0.5 rounded-full border-2 border-white shadow-md leading-none">
+        <div className="absolute right-2 top-1 z-20 flex h-6 min-w-[24px] items-center justify-center rounded-full border-2 border-white bg-yellow-300 px-1.5 text-[10px] font-black leading-[1] text-black shadow-[0_10px_20px_rgba(33,12,22,0.28)]">
           {count}
         </div>
         {overflow > 0 && (
-          <div className="absolute -top-1.5 -left-1.5 bg-black/70 text-cyan-100 text-[9px] font-black px-1.5 py-0.5 rounded-full border border-cyan-200/50 leading-none">
+          <div className="absolute left-1 top-1 rounded-full border border-cyan-200/50 bg-black/70 px-1.5 py-0.5 text-[9px] font-black leading-none text-cyan-100">
             +{overflow}
           </div>
         )}
@@ -357,6 +369,10 @@ function getOppSlots(n) {
 const LONG_PRESS_MS = 200;
 const MOVE_THRESHOLD_PX = 10;
 const TOUCH_TAP_MAX_MS = 260;
+const TOUCH_TAP_SLOP_PX = 6;
+const TOUCH_SCROLL_INTENT_PX = 4;
+const BLUFF_HAND_CARD_WIDTH_PX = 76;
+const BLUFF_HAND_MEANINGFUL_OVERFLOW_PX = 48;
 const EDGE_ZONE_PX = 56;
 const MAX_AUTO_SCROLL_PX = 18;
 const BLUFF_SUIT_SORT_ORDER = ['♠', '♥', '♦', '♣'];
@@ -464,10 +480,22 @@ export default function GameArena({
   const [throwFxCards,    setThrowFxCards]    = useState([]);
   const [pendingHiddenTokens, setPendingHiddenTokens] = useState([]);
   const [optimisticUi,    setOptimisticUi]    = useState(null);
+  const [handScrollState, setHandScrollState] = useState({
+    canLeft: false,
+    canRight: false,
+    hasMeaningfulOverflow: false,
+    scrollLeft: 0,
+    maxScrollLeft: 0,
+    trackWidth: 0,
+    viewportWidth: 0,
+    jumpPx: 0,
+    lastAction: '',
+  });
   const prevTurnRef = useRef(null);
   const prevIsMyTurnRef = useRef(false);
   const prevStatusRef = useRef('');
   const handStripRef = useRef(null);
+  const handTrackRef = useRef(null);
   const cardNodeRefs = useRef(new Map());
   const displayOrderRef = useRef([]);
   const handEntriesRef = useRef([]);
@@ -631,6 +659,12 @@ export default function GameArena({
   const handVisualCards = optimisticUi?.drawPreview
     ? [...displayCards, { token: '__draw_preview__', preview: true, source: optimisticUi.drawPreview.source, rank: optimisticUi.drawPreview.rank, suit: optimisticUi.drawPreview.suit }]
     : displayCards;
+  const bluffOverlapPx = isBluffMode
+    ? (displayCards.length > 18 ? 10 : displayCards.length > 12 ? 8 : 6)
+    : 0;
+  const handLiftReservePx = isBluffMode ? 90 : 72;
+  const showHandScrollButtons = !usePixiRenderer && isBluffMode && handScrollState.hasMeaningfulOverflow;
+  const isBluffHandScrollable = isBluffMode && handScrollState.hasMeaningfulOverflow;
 
   useEffect(() => {
     handEntriesRef.current = handEntries;
@@ -751,6 +785,91 @@ export default function GameArena({
     }
   };
 
+  const buildHandScrollMetrics = () => {
+    const container = handStripRef.current;
+    const track = handTrackRef.current;
+    if (!container || !track) return null;
+
+    const viewportWidth = Math.max(0, container.clientWidth);
+    const trackWidth = Math.max(0, track.scrollWidth);
+    const maxScrollLeft = Math.max(0, trackWidth - viewportWidth);
+    const stepPx = Math.max(1, BLUFF_HAND_CARD_WIDTH_PX - bluffOverlapPx);
+    const jumpCards = Math.max(1, Math.floor(viewportWidth / stepPx) - 1);
+    const jumpPx = Math.max(stepPx, jumpCards * stepPx);
+    let scrollLeft = clamp(Math.max(0, container.scrollLeft), 0, maxScrollLeft);
+    const hasMeaningfulOverflow = isBluffMode && maxScrollLeft >= BLUFF_HAND_MEANINGFUL_OVERFLOW_PX;
+    if (isBluffMode && !hasMeaningfulOverflow) scrollLeft = 0;
+
+    return {
+      container,
+      viewportWidth,
+      trackWidth,
+      maxScrollLeft,
+      jumpPx,
+      hasMeaningfulOverflow,
+      scrollLeft,
+    };
+  };
+
+  const syncHandScrollState = (lastAction = '') => {
+    const metrics = buildHandScrollMetrics();
+    if (!metrics) {
+      setHandScrollState((prev) => ({
+        ...prev,
+        canLeft: false,
+        canRight: false,
+        hasMeaningfulOverflow: false,
+        scrollLeft: 0,
+        maxScrollLeft: 0,
+        trackWidth: 0,
+        viewportWidth: 0,
+        jumpPx: 0,
+        lastAction: lastAction || prev.lastAction || '',
+      }));
+      return null;
+    }
+
+    if (metrics.container.scrollLeft !== metrics.scrollLeft) {
+      metrics.container.scrollLeft = metrics.scrollLeft;
+    }
+
+    setHandScrollState((prev) => ({
+      ...prev,
+      canLeft: metrics.hasMeaningfulOverflow && metrics.scrollLeft > 4,
+      canRight: metrics.hasMeaningfulOverflow && metrics.scrollLeft < metrics.maxScrollLeft - 4,
+      hasMeaningfulOverflow: metrics.hasMeaningfulOverflow,
+      scrollLeft: metrics.scrollLeft,
+      maxScrollLeft: metrics.maxScrollLeft,
+      trackWidth: metrics.trackWidth,
+      viewportWidth: metrics.viewportWidth,
+      jumpPx: metrics.jumpPx,
+      lastAction: lastAction || prev.lastAction || '',
+    }));
+    return {
+      currentLeft: metrics.scrollLeft,
+      maxScrollLeft: metrics.maxScrollLeft,
+      jumpPx: metrics.jumpPx,
+      hasMeaningfulOverflow: metrics.hasMeaningfulOverflow,
+    };
+  };
+
+  const scrollHandStripBy = (direction) => {
+    const container = handStripRef.current;
+    if (!container) return;
+
+    const metrics = syncHandScrollState();
+    if (!metrics?.hasMeaningfulOverflow) return;
+
+    const currentLeft = Math.max(0, metrics.currentLeft || 0);
+    const maxScrollLeft = Math.max(0, metrics.maxScrollLeft || 0);
+    const jumpPx = Math.max(1, metrics.jumpPx || 0);
+    const nextLeft = clamp(currentLeft + direction * jumpPx, 0, maxScrollLeft);
+    const fallbackLeft = direction > 0 ? maxScrollLeft : 0;
+    const appliedLeft = nextLeft === currentLeft ? fallbackLeft : nextLeft;
+    container.scrollLeft = appliedLeft;
+    requestAnimationFrame(() => syncHandScrollState(`${direction > 0 ? 'right' : 'left'} ${Math.round(currentLeft)}->${Math.round(appliedLeft)}`));
+  };
+
   const resolveTargetIndex = (order, clientX) => {
     for (let i = 0; i < order.length; i += 1) {
       const token = order[i];
@@ -862,6 +981,34 @@ export default function GameArena({
       document.removeEventListener('visibilitychange', onVisibilityChange);
     };
   }, []);
+  useEffect(() => {
+    if (usePixiRenderer) return undefined;
+    const container = handStripRef.current;
+    const track = handTrackRef.current;
+    if (!container || !track) return undefined;
+
+    const rafId = requestAnimationFrame(() => syncHandScrollState());
+    const onResize = () => syncHandScrollState();
+    window.addEventListener('resize', onResize);
+
+    let observer = null;
+    if (typeof ResizeObserver !== 'undefined') {
+      observer = new ResizeObserver(() => syncHandScrollState());
+      observer.observe(container);
+      observer.observe(track);
+    }
+
+    return () => {
+      cancelAnimationFrame(rafId);
+      window.removeEventListener('resize', onResize);
+      observer?.disconnect();
+    };
+  }, [usePixiRenderer, handVisualCards.length, isBluffMode, selectedTokens.length, dragToken, bluffOverlapPx]);
+  useEffect(() => {
+    if (usePixiRenderer) return undefined;
+    const rafId = requestAnimationFrame(() => syncHandScrollState());
+    return () => cancelAnimationFrame(rafId);
+  }, [usePixiRenderer, isBluffHandScrollable, showHandScrollButtons]);
 
   const beginDrag = (eventOrPoint) => {
     const interaction = interactionRef.current;
@@ -955,12 +1102,24 @@ export default function GameArena({
     if (interaction.mode === 'pending') {
       const dx = event.clientX - interaction.startX;
       const dy = event.clientY - interaction.startY;
-      const moved = Math.abs(dx) > MOVE_THRESHOLD_PX || Math.abs(dy) > MOVE_THRESHOLD_PX;
+      const absDx = Math.abs(dx);
+      const absDy = Math.abs(dy);
+      const isTouchHorizontalScroll = interaction.pointerType === 'touch'
+        && absDx >= TOUCH_SCROLL_INTENT_PX
+        && absDx > absDy;
+      if (isTouchHorizontalScroll) {
+        clearLongPressTimer();
+        interaction.didScrollWhilePending = true;
+        interaction.mode = 'scroll';
+        return;
+      }
+      const moved = absDx > MOVE_THRESHOLD_PX || absDy > MOVE_THRESHOLD_PX;
 
       if (!moved) return;
       clearLongPressTimer();
 
       if (interaction.pointerType === 'touch') {
+        interaction.didScrollWhilePending = true;
         interaction.mode = 'scroll';
         return;
       }
@@ -976,6 +1135,7 @@ export default function GameArena({
   };
 
   const onHandStripScroll = () => {
+    syncHandScrollState();
     const interaction = interactionRef.current;
     if (interaction.pointerType !== 'touch') return;
     if (interaction.mode !== 'pending' && interaction.mode !== 'scroll') return;
@@ -995,10 +1155,16 @@ export default function GameArena({
     if (interaction.mode === 'pending') {
       const dx = event.clientX - interaction.startX;
       const dy = event.clientY - interaction.startY;
-      const moved = Math.abs(dx) > MOVE_THRESHOLD_PX || Math.abs(dy) > MOVE_THRESHOLD_PX;
+      const absDx = Math.abs(dx);
+      const absDy = Math.abs(dy);
+      const tapSlopPx = interaction.pointerType === 'touch' ? TOUCH_TAP_SLOP_PX : MOVE_THRESHOLD_PX;
+      const moved = absDx > tapSlopPx || absDy > tapSlopPx;
+      const isTouchHorizontalScroll = interaction.pointerType === 'touch'
+        && absDx >= TOUCH_SCROLL_INTENT_PX
+        && absDx > absDy;
       const isTouchTap = interaction.pointerType !== 'touch'
         || (Date.now() - Number(interaction.downAtMs || 0)) <= TOUCH_TAP_MAX_MS;
-      if (!moved && !interaction.didScrollWhilePending && isTouchTap && interaction.canSelectAtDown) {
+      if (!moved && !isTouchHorizontalScroll && !interaction.didScrollWhilePending && isTouchTap && interaction.canSelectAtDown) {
         toggleSelection(interaction.activeToken);
       }
     }
@@ -1050,10 +1216,6 @@ export default function GameArena({
   const canBluffObjection = isMyTurn && phase === 'bluff_play' && !!activeBluffClaim && activeBluffClaim?.claimerId !== myId;
   const isThrowMatch = !!previousOpenCard && selectedCards.length > 0 && selectedCards[0]?.rank === previousOpenCard.rank;
   const canPick = isMyTurn && phase === 'pick';
-  const bluffOverlapPx = isBluffMode
-    ? (displayCards.length > 18 ? 10 : displayCards.length > 12 ? 8 : 6)
-    : 0;
-  const handLiftReservePx = isBluffMode ? 90 : 72;
   const actionBlockReason = isBluffMode
     ? ''
     : (phase === 'pick'
@@ -1321,8 +1483,8 @@ export default function GameArena({
                 <div className="text-[9px] font-black uppercase tracking-[0.12em] text-white/60 text-center">
                   Cards by player
                 </div>
-                <div className="overflow-x-auto overflow-y-hidden pb-1 [scrollbar-width:thin]">
-                  <div className="flex items-end gap-3 w-max min-w-full justify-center px-1">
+                <div className="overflow-x-auto overflow-y-visible px-1 py-2 [scrollbar-width:thin]">
+                  <div className="flex min-w-full w-max items-end justify-center gap-3">
                     {bluffRiskByPlayer.map((entry) => (
                       <MaskedCardStack
                         key={`risk-${entry.playerId}`}
@@ -1854,13 +2016,46 @@ export default function GameArena({
           {/* ── HAND CARDS — horizontally scrollable, max 10 ──── */}
           {!usePixiRenderer ? (
             <div className="relative z-10 overflow-visible px-4 pb-5">
+              {showHandScrollButtons ? (
+                <div className="relative z-[120] mb-2 flex items-center justify-between px-1 pointer-events-auto">
+                  <button
+                    type="button"
+                    onClick={() => scrollHandStripBy(-1)}
+                    disabled={!handScrollState.canLeft}
+                    className={`flex h-9 w-9 items-center justify-center rounded-full border transition ${
+                      handScrollState.canLeft
+                        ? 'border-[rgba(255,202,104,0.42)] bg-[rgba(40,16,24,0.56)] text-[var(--gold)] shadow-[0_12px_24px_rgba(23,8,19,0.18)]'
+                        : 'border-white/10 bg-white/5 text-white/25 cursor-not-allowed'
+                    }`}
+                    aria-label="Scroll cards left"
+                  >
+                    <IconChevronLeft />
+                  </button>
+                  <div className="rounded-full border border-[rgba(255,245,235,0.12)] bg-[rgba(40,16,24,0.34)] px-3 py-1 text-[9px] font-black uppercase tracking-[0.14em] text-white/55">
+                    Scroll hand
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => scrollHandStripBy(1)}
+                    disabled={!handScrollState.canRight}
+                    className={`flex h-9 w-9 items-center justify-center rounded-full border transition ${
+                      handScrollState.canRight
+                        ? 'border-[rgba(255,202,104,0.42)] bg-[rgba(40,16,24,0.56)] text-[var(--gold)] shadow-[0_12px_24px_rgba(23,8,19,0.18)]'
+                        : 'border-white/10 bg-white/5 text-white/25 cursor-not-allowed'
+                    }`}
+                    aria-label="Scroll cards right"
+                  >
+                    <IconChevronRight />
+                  </button>
+                </div>
+              ) : null}
               <div
                 ref={handStripRef}
                 onScroll={onHandStripScroll}
                 style={{
-                  overflowX: 'auto',
+                  overflowX: !isBluffMode ? 'auto' : (isBluffHandScrollable ? 'auto' : 'hidden'),
                   overflowY: 'hidden',
-                  scrollbarWidth: 'thin',
+                  scrollbarWidth: 'none',
                   WebkitOverflowScrolling: 'touch',
                   touchAction: isDragging ? 'none' : 'pan-x',
                   paddingTop: `${handLiftReservePx}px`,
@@ -1869,7 +2064,16 @@ export default function GameArena({
                   zIndex: 10,
                 }}
               >
-                <div className="mx-auto flex min-w-full w-max items-end justify-center rounded-t-[28px] border border-b-0 border-[rgba(255,245,235,0.14)] bg-[linear-gradient(180deg,rgba(40,16,24,0.42),rgba(40,16,24,0.14))] px-4 pt-3 shadow-[0_-14px_28px_rgba(23,8,19,0.14)]">
+                <div
+                  ref={handTrackRef}
+                  className={`rounded-t-[28px] border border-b-0 border-[rgba(255,245,235,0.14)] bg-[linear-gradient(180deg,rgba(40,16,24,0.42),rgba(40,16,24,0.14))] pt-3 shadow-[0_-14px_28px_rgba(23,8,19,0.14)] ${
+                    isBluffMode
+                      ? isBluffHandScrollable
+                        ? 'flex w-max min-w-max items-end justify-start pl-4 pr-8'
+                        : 'mx-auto flex w-max items-end justify-start pl-4 pr-8'
+                      : 'mx-auto flex min-w-full w-max items-end justify-center px-4'
+                  }`}
+                >
   	              {handVisualCards.map((card, cardIdx) => {
   	                if (card?.preview) {
   	                  return (
@@ -1914,12 +2118,9 @@ export default function GameArena({
                   const overlap = isBluffMode && cardIdx > 0
                     ? ((isChosen || isDragged) ? 0 : -bluffOverlapPx)
                     : 0;
-                  const spreadX = isChosen && isBluffMode
-                    ? (cardIdx - (displayCards.length - 1) / 2) * 1.6
-                    : 0;
                   const liftY = isDragged
                     ? -58
-                    : (isChosen ? -42 : 0);
+                    : 0;
 
                   return (
                     <motion.div
@@ -1930,7 +2131,7 @@ export default function GameArena({
                       }}
                       data-token={card.token}
                       initial={{ opacity: 0, y: 36, rotate: baseAngle + 2 }}
-                      animate={{ opacity: 1, y: liftY, x: spreadX, scale: isChosen ? 1.08 : 1, rotate: baseAngle }}
+                      animate={{ opacity: 1, y: liftY, x: 0, scale: isDragged ? 1.04 : 1, rotate: baseAngle }}
                       transition={{ type: 'spring', stiffness: 400, damping: 22, delay: Math.min(cardIdx * 0.018, 0.16) }}
                       onPointerDown={(event) => onCardPointerDown(card.token, event)}
                       onPointerMove={onCardPointerMove}

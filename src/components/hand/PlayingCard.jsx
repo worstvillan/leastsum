@@ -32,7 +32,7 @@ export default function PlayingCard({
 
   return (
     <motion.div
-      whileHover={isDisabled ? undefined : { y: -2 }}
+      whileHover={isDisabled || isSelected ? undefined : { y: -2 }}
       animate={isMatchable && !isSelected ? { y: [0, -4, 0] } : undefined}
       transition={isMatchable && !isSelected ? { duration: 1.2, repeat: Infinity, ease: 'easeInOut' } : undefined}
       onClick={isDisabled ? undefined : onClick}
